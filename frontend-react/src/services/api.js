@@ -1,0 +1,483 @@
+const BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:8000";
+
+
+// ============================================================
+// GET
+// ============================================================
+
+const get = async (
+  path,
+  options = {}
+) => {
+  const controller =
+    new AbortController();
+
+  const timeout = setTimeout(
+    () => {
+      controller.abort();
+    },
+    options.timeout ?? 10000
+  );
+
+  try {
+    const response = await fetch(
+      `${BASE}${path}`,
+      {
+        method: "GET",
+
+        headers: {
+          Accept:
+            "application/json"
+        },
+
+        signal:
+          controller.signal,
+
+        cache:
+          "no-store"
+      }
+    );
+
+    if (!response.ok) {
+      let detail = "";
+
+      try {
+        const data =
+          await response.json();
+
+        detail =
+          data?.detail ||
+          data?.error ||
+          "";
+      } catch {
+        // Ignore non-JSON responses.
+      }
+
+      throw new Error(
+        `${response.status} ${
+          response.statusText
+        } ${path}${
+          detail
+            ? ` — ${detail}`
+            : ""
+        }`
+      );
+    }
+
+    return await response.json();
+
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+
+// ============================================================
+// POST
+// ============================================================
+
+const post = async (
+  path,
+  options = {}
+) => {
+  const controller =
+    new AbortController();
+
+  /*
+   * Ollama can take longer because
+   * llama3.2:3b is running locally on CPU.
+   *
+   * Backend portfolio timeout:
+   * 120 seconds.
+   *
+   * Frontend timeout:
+   * 180 seconds.
+   */
+
+  const timeout = setTimeout(
+    () => {
+      controller.abort();
+    },
+    options.timeout ?? 180000
+  );
+
+  try {
+
+    const response =
+      await fetch(
+        `${BASE}${path}`,
+        {
+          method: "POST",
+
+          headers: {
+            Accept:
+              "application/json",
+
+            "Content-Type":
+              "application/json"
+          },
+
+          signal:
+            controller.signal,
+
+          cache:
+            "no-store",
+
+          body:
+            options.body
+              ? JSON.stringify(
+                  options.body
+                )
+              : undefined
+        }
+      );
+
+    if (!response.ok) {
+
+      let detail = "";
+
+      try {
+
+        const data =
+          await response.json();
+
+        detail =
+          data?.detail ||
+          data?.error ||
+          "";
+
+      } catch {
+        // Ignore non-JSON responses.
+      }
+
+      throw new Error(
+        `${response.status} ${
+          response.statusText
+        } ${path}${
+          detail
+            ? ` — ${detail}`
+            : ""
+        }`
+      );
+    }
+
+    return await response.json();
+
+  } finally {
+
+    clearTimeout(timeout);
+  }
+};
+
+
+// ============================================================
+// URL ENCODING
+// ============================================================
+
+const encode = (
+  value
+) =>
+  encodeURIComponent(
+    String(value)
+  );
+
+
+// ============================================================
+// FLOW SENSE API
+// ============================================================
+
+export const api = {
+
+  // ----------------------------------------------------------
+  // Portfolio
+  // ----------------------------------------------------------
+
+  facilities: () =>
+    get(
+      "/api/facilities"
+    ),
+
+  anomalies: (
+    limit = 50
+  ) =>
+    get(
+      `/api/anomalies/recent?limit=${Math.min(
+        Number(limit) || 50,
+        200
+      )}`
+    ),
+
+
+  // ----------------------------------------------------------
+  // Facility
+  // ----------------------------------------------------------
+
+  summary: (
+    facilityCode
+  ) =>
+    get(
+      `/api/facilities/${encode(
+        facilityCode
+      )}/summary`
+    ),
+
+  energy: (
+    facilityCode,
+    hours = 24
+  ) =>
+    get(
+      `/api/facilities/${encode(
+        facilityCode
+      )}/energy?hours=${Math.max(
+        1,
+        Number(hours) || 24
+      )}`
+    ),
+
+  water: (
+    facilityCode,
+    hours = 24
+  ) =>
+    get(
+      `/api/facilities/${encode(
+        facilityCode
+      )}/water?hours=${Math.max(
+        1,
+        Number(hours) || 24
+      )}`
+    ),
+
+  reconciliation: (
+    facilityCode,
+    limit = 100
+  ) =>
+    get(
+      `/api/facilities/${encode(
+        facilityCode
+      )}/reconciliation?limit=${Math.min(
+        Number(limit) || 100,
+        500
+      )}`
+    ),
+
+  yearlySummary: (
+    facilityCode
+  ) =>
+    get(
+      `/api/facilities/${encode(
+        facilityCode
+      )}/yearly-summary`
+    ),
+
+
+  // ----------------------------------------------------------
+  // Reports
+  // ----------------------------------------------------------
+
+  facilityReport: (
+    facilityCode,
+    period = "24h"
+  ) =>
+    get(
+      `/api/reports/facilities/${encode(
+        facilityCode
+      )}?period=${encode(
+        period
+      )}`
+    ),
+
+  aiReportAnalysis: (
+    facilityCode,
+    period = "24h"
+  ) =>
+    post(
+      `/api/reports/facilities/${encode(
+        facilityCode
+      )}/ai-analysis?period=${encode(
+        period
+      )}`,
+      {
+        timeout:
+          180000
+      }
+    ),
+
+  /*
+   * Backend:
+   *
+   * POST
+   * /api/reports/portfolio/ai-analysis?period=30d
+   *
+   * Response:
+   *
+   * {
+   *   scope: "portfolio",
+   *   period: "30d",
+   *   facility_count: 100,
+   *   success: true,
+   *   model: "llama3.2:3b",
+   *   evidence_summary: {...},
+   *   analysis: {...},
+   *   error: null
+   * }
+   */
+
+  aiPortfolioAnalysis: (
+    period = "24h"
+  ) =>
+    post(
+      `/api/reports/portfolio/ai-analysis?period=${encode(
+        period
+      )}`,
+      {
+        timeout:
+          180000
+      }
+    ),
+
+
+  // ----------------------------------------------------------
+  // PDF Reports
+  // ----------------------------------------------------------
+
+  reportPdfUrl: (
+    facilityCode,
+    period = "24h"
+  ) =>
+    `${BASE}/api/reports/facilities/${encode(
+      facilityCode
+    )}/pdf?period=${encode(
+      period
+    )}`,
+
+  reportPortfolioPdfUrl: (
+    period = "24h"
+  ) =>
+    `${BASE}/api/reports/portfolio/pdf?period=${encode(
+      period
+    )}`,
+
+
+  // ----------------------------------------------------------
+  // Portfolio Historical Data
+  // ----------------------------------------------------------
+
+  portfolioEnergy: (
+    hours = 24
+  ) =>
+    get(
+      `/api/portfolio/energy?hours=${Math.max(
+        1,
+        Number(hours) || 24
+      )}`
+    ),
+
+  portfolioWater: (
+    hours = 24
+  ) =>
+    get(
+      `/api/portfolio/water?hours=${Math.max(
+        1,
+        Number(hours) || 24
+      )}`
+    ),
+
+
+  // ----------------------------------------------------------
+  // Devices / Asset Management
+  // ----------------------------------------------------------
+
+  listDevices: () =>
+    get(
+      "/api/devices"
+    ),
+
+  deviceHealth: (
+    deviceCode
+  ) =>
+    get(
+      `/api/devices/${encode(
+        deviceCode
+      )}/health`
+    ),
+
+  deviceRealtimeHealth: (
+    deviceCode
+  ) =>
+    get(
+      `/api/devices/${encode(
+        deviceCode
+      )}/realtime-health`
+    ),
+
+  deviceNetwork: (
+    deviceCode
+  ) =>
+    get(
+      `/api/devices/${encode(
+        deviceCode
+      )}/network`
+    ),
+
+  deviceUptime: (
+    deviceCode,
+    hours = 24
+  ) =>
+    get(
+      `/api/devices/${encode(
+        deviceCode
+      )}/network/uptime?hours=${Math.max(
+        1,
+        Number(hours) || 24
+      )}`
+    ),
+
+  deviceOfflineEvents: (
+    deviceCode,
+    limit = 50
+  ) =>
+    get(
+      `/api/devices/${encode(
+        deviceCode
+      )}/offline-events?limit=${Math.min(
+        100,
+        Math.max(
+          1,
+          Number(limit) || 50
+        )
+      )}`
+    )
+};
+
+
+// ============================================================
+// API BASE URL
+// ============================================================
+
+export const API_BASE_URL =
+  BASE;
+
+
+// ============================================================
+// LIGHTWEIGHT HEALTH CHECK
+// ============================================================
+
+export const health =
+  async () => {
+
+    try {
+
+      return await get(
+        "/"
+      );
+
+    } catch {
+
+      return {
+        status:
+          "offline"
+      };
+    }
+  };

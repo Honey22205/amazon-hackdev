@@ -1,0 +1,5700 @@
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Routes,
+  Route,
+  NavLink,
+  Navigate,
+  Outlet,
+  useNavigate,
+  useParams
+} from "react-router-dom";
+
+import {
+  Building2,
+  Zap,
+  Droplets,
+  Bell,
+  BarChart3,
+  Sparkles,
+  FileText,
+  Cpu,
+  Wrench,
+  Settings,
+  Gauge,
+  ShieldCheck,
+  ShieldAlert,
+  Thermometer,
+  AlertTriangle,
+  Leaf,
+  RefreshCw,
+  Search,
+  ChevronDown,
+  Activity,
+  Waves,
+  CircleDollarSign,
+  Menu,
+  X,
+  Lightbulb
+} from "lucide-react";
+
+import {
+  AreaChart,
+  Area,
+  LineChart,
+  Line,
+  ResponsiveContainer,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip
+} from "recharts";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import ResetPassword from "./pages/ResetPassword";
+import ProtectedRoute from "./components/ProtectedRoute";
+import SettingsPage from "./pages/SettingsPage";
+import MaintenancePage from "./pages/MaintenancePage";
+import { api, API_BASE_URL } from "./services/api";
+import RealtimeOverview from "./RealtimeOverview";
+import { useFlowSense } from "./context/FlowSenseContext";
+import { useAuth } from "./auth/AuthContext";
+import "./App.css";
+import AIInsightsPage from "./pages/AIInsightsPage";
+
+
+const navItems = [
+  ["/", "Overview", Gauge],
+  ["/facilities", "Facilities", Building2],
+  ["/energy", "Energy", Zap],
+  ["/water", "Water", Droplets],
+  ["/alerts", "Alerts", Bell],
+  ["/reports", "Reports", FileText],
+  ["/analytics", "Analytics", BarChart3],
+  ["/ai-insights", "AI Insights", Sparkles],
+  ["/devices", "Devices", Cpu],
+  ["/maintenance", "Maintenance", Wrench],
+  ["/settings", "Settings", Settings]
+];
+
+const num = (v, d = 1) =>
+  Number.isFinite(Number(v))
+    ? Number(v).toLocaleString("en-IN", {
+        maximumFractionDigits: d
+      })
+    : "0";
+
+const fmtTime = (v) =>
+  v
+    ? new Date(v).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â";
+
+function getStatus(facility, anomalies) {
+  const rows = anomalies.filter(
+    (a) => a.facility_code === facility.facility_code
+  );
+
+  if (
+    rows.some(
+      (a) => String(a.severity).toLowerCase() === "critical"
+    )
+  ) {
+    return "Critical";
+  }
+
+  if (rows.length) return "Needs Attention";
+
+  return "Healthy";
+}
+
+function Card({ children, className = "" }) {
+  return (
+    <section className={`card ${className}`}>
+      {children}
+    </section>
+  );
+}
+
+function Kpi({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone = "blue"
+}) {
+  return (
+    <Card className="kpi">
+      <div className={`kpi-icon ${tone}`}>
+        <Icon />
+      </div>
+
+      <label>{label}</label>
+      <strong>{value}</strong>
+      <small className={tone}>{sub}</small>
+    </Card>
+  );
+}
+
+function MetricItem({ label, value }) {
+  return (
+    <div className="reports-metric-item">
+      <span className="reports-metric-label">
+        {label}
+      </span>
+
+      <span className="reports-metric-value">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+
+function PanelHead({ icon: Icon, title, sub, to }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="panel-head">
+      <div>
+        <h2>
+          <Icon />
+          {title}
+        </h2>
+
+        <p>{sub}</p>
+      </div>
+
+      {to && (
+        <button
+          type="button"
+          className="link"
+          onClick={() => navigate(to)}
+        >
+          View Details ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Ring({ value, water = false, label }) {
+  const percentage = Math.max(
+    0,
+    Math.min(100, Number(value) || 0)
+  );
+
+  return (
+    <div className="ring-wrap">
+      <div
+        className={`ring ${water ? "water" : ""}`}
+        style={{
+          "--p": `${percentage * 3.6}deg`
+        }}
+      >
+        <div className="ring-in">
+          <b>{Math.round(percentage)}</b>
+          <span>/100</span>
+        </div>
+      </div>
+
+      <small>{label}</small>
+    </div>
+  );
+}
+
+/* =========================
+   SHELL
+========================= */
+
+function Shell({ anomalies }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login", { replace: true });
+  };
+
+  return (
+    <div className="app">
+      <aside
+        className={`sidebar ${
+          mobileOpen ? "open" : ""
+        }`}
+      >
+        <div className="brand">
+          <div className="brand-logo">
+            <Waves />
+          </div>
+
+          <div className="brand-copy">
+            <b>FlowSense</b>
+            <small>
+              IoT Resource Intelligence
+            </small>
+          </div>
+
+          <button
+            type="button"
+            className="close"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close menu"
+          >
+            <X />
+          </button>
+        </div>
+
+        <div className="menu-label">
+          MAIN MENU
+        </div>
+
+        <nav className="sidebar-nav">
+          {navItems.map(
+            ([to, label, Icon]) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }) =>
+                  `nav-item ${
+                    isActive ? "active" : ""
+                  }`
+                }
+                onClick={() =>
+                  setMobileOpen(false)
+                }
+              >
+                <Icon />
+
+                <span>{label}</span>
+
+                {label === "Alerts" &&
+                  anomalies.length > 0 && (
+                    <em>{anomalies.length}</em>
+                  )}
+              </NavLink>
+            )
+          )}
+        </nav>
+
+        <div className="quick">
+          <Sparkles />
+
+          <div>
+            <b>Quick Insight</b>
+            <span>
+              {anomalies.length
+                ? `${anomalies.length} recent anomalies need review`
+                : "No recent anomalies"}
+            </span>
+          </div>
+        </div>
+
+        <div className="user">
+  <div className="avatar">
+    {(user?.name || "User")
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase()}
+  </div>
+
+  <div className="user-info">
+    <b>{user?.name || "User"}</b>
+    <small>
+      {user?.email || "FlowSense Control Center"}
+    </small>
+  </div>
+
+  <button
+    type="button"
+    className="logout-button"
+    onClick={handleLogout}
+    title="Logout"
+    aria-label="Logout"
+  >
+    Logout
+  </button>
+</div>
+      </aside>
+
+      <main className="main">
+        <header className="mobile-head">
+          <button
+            type="button"
+            onClick={() =>
+              setMobileOpen(true)
+            }
+            aria-label="Open menu"
+          >
+            <Menu />
+          </button>
+
+          <b>FlowSense</b>
+
+          <button
+            type="button"
+            onClick={() =>
+              window.location.reload()
+            }
+            aria-label="Refresh"
+          >
+            <RefreshCw />
+          </button>
+        </header>
+
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
+/* =========================
+   SIMPLE PAGE HEADER
+========================= */
+
+function Page({ title, sub, children }) {
+  return (
+    <div className="page">
+      <div className="inner">
+        <div className="page-title">
+          <div>
+            <div className="overline">
+              FLOWSENSE / OPERATIONS
+            </div>
+
+            <h1>{title}</h1>
+            <p>{sub}</p>
+          </div>
+        </div>
+
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+   LEGACY OVERVIEW
+========================= */
+
+function Overview({
+  facilities,
+  anomalies,
+  selected,
+  setSelected,
+  onRefresh
+}) {
+  const [summaries, setSummaries] =
+    useState([]);
+
+  const [energy, setEnergy] =
+    useState([]);
+
+  const [water, setWater] =
+    useState([]);
+
+  const [recon, setRecon] =
+    useState([]);
+
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      try {
+        const list = selected
+          ? [selected]
+          : facilities
+              .slice(0, 12)
+              .map((f) => f.facility_code);
+
+        const data = await Promise.all(
+          list.map((code) =>
+            api.summary(code).catch(() => null)
+          )
+        );
+
+        if (alive) {
+          setSummaries(
+            data.filter(Boolean)
+          );
+        }
+
+        if (selected) {
+          const [e, w, r] =
+            await Promise.all([
+              api.energy(selected, 24),
+              api.water(selected, 24),
+              api.reconciliation(
+                selected,
+                100
+              )
+            ]);
+
+          if (alive) {
+            setEnergy(
+              Array.isArray(e) ? e : []
+            );
+            setWater(
+              Array.isArray(w) ? w : []
+            );
+            setRecon(
+              Array.isArray(r) ? r : []
+            );
+          }
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    load();
+
+    return () => {
+      alive = false;
+    };
+  }, [selected, facilities]);
+
+  const energyTotal =
+    summaries.reduce(
+      (sum, x) =>
+        sum + Number(x.energy_kwh || 0),
+      0
+    );
+
+  const waterTotal =
+    summaries.reduce(
+      (sum, x) =>
+        sum + Number(x.water_kl || 0),
+      0
+    );
+
+  const loss =
+    recon.reduce(
+      (sum, x) =>
+        sum +
+        Number(x.unaccounted_value || 0),
+      0
+    );
+
+  const energyChart = energy.map((x) => ({
+    t: fmtTime(x.reading_time),
+    v: Number(x.reading_value) || 0,
+    expected:
+      (Number(x.reading_value) || 0) *
+      0.92
+  }));
+
+  const waterChart = water.map((x) => ({
+    t: fmtTime(x.reading_time),
+    v: Number(x.reading_value) || 0
+  }));
+
+  const healthy = facilities.filter(
+    (f) =>
+      getStatus(f, anomalies) ===
+      "Healthy"
+  ).length;
+
+  const attention = facilities.filter(
+    (f) =>
+      getStatus(f, anomalies) ===
+      "Needs Attention"
+  ).length;
+
+  const critical = facilities.filter(
+    (f) =>
+      getStatus(f, anomalies) ===
+      "Critical"
+  ).length;
+
+  return (
+    <div className="page">
+      <div className="content">
+        <div className="page-title">
+          <div>
+            <div className="overline">
+              FLOWSENSE / LEGACY
+            </div>
+
+            <h1>Dashboard Overview</h1>
+
+            <p>
+              Historical dashboard view
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onRefresh}
+          >
+            <RefreshCw />
+            Refresh
+          </button>
+        </div>
+
+        <div className="facility-row">
+          <div className="portfolio">
+            <Building2 />
+            <span>
+              {selected
+                ? facilities.find(
+                    (f) =>
+                      f.facility_code ===
+                      selected
+                  )?.facility_name
+                : "Portfolio / All Facilities"}
+            </span>
+            <ChevronDown />
+          </div>
+
+          <span className="updated">
+            Historical REST data
+          </span>
+        </div>
+
+        <div className="kpis">
+          <Kpi
+            icon={Building2}
+            label="Total Facilities"
+            value={facilities.length}
+            sub="All locations"
+            tone="blue"
+          />
+
+          <Kpi
+            icon={ShieldCheck}
+            label="Healthy"
+            value={healthy}
+            sub="Current database status"
+            tone="green"
+          />
+
+          <Kpi
+            icon={AlertTriangle}
+            label="Needs Attention"
+            value={attention}
+            sub="Requires review"
+            tone="yellow"
+          />
+
+          <Kpi
+            icon={AlertTriangle}
+            label="Critical"
+            value={critical}
+            sub="Immediate attention"
+            tone="red"
+          />
+        </div>
+
+        <div className="main-grid">
+          <Card>
+            <PanelHead
+              icon={Zap}
+              title="Energy Overview"
+              sub="Historical consumption"
+              to="/energy"
+            />
+
+            <div className="score-row">
+              <Ring
+                value={81}
+                label="Energy Efficiency Score"
+              />
+
+              <div className="metrics">
+                <div>
+                  <span>
+                    Total Consumption
+                  </span>
+                  <b>
+                    {num(energyTotal)} kWh
+                  </b>
+                </div>
+
+                <div>
+                  <span>
+                    Expected Consumption
+                  </span>
+                  <b>
+                    {num(
+                      energyTotal * 0.92
+                    )}{" "}
+                    kWh
+                  </b>
+                </div>
+
+                <div>
+                  <span>
+                    Excess Consumption
+                  </span>
+                  <b className="red">
+                    {num(
+                      energyTotal * 0.08
+                    )}{" "}
+                    kWh
+                  </b>
+                </div>
+              </div>
+            </div>
+
+            <div className="chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={energyChart}
+                  margin={{ top: 5, right: 10, left: 0, bottom: 25 }}
+                >
+                  <CartesianGrid
+                    stroke="#1c2d43"
+                    vertical={false}
+                  />
+
+                  <XAxis
+                    dataKey="t"
+                    stroke="#61748e"
+                  />
+
+                  <YAxis
+                    stroke="#61748e"
+                  />
+                  <Area dataKey="v"
+                    stroke="#31aaff"
+                    fill="#31aaff"
+                    fillOpacity=".12"
+                  />
+
+                  <Line
+                    dataKey="expected"
+                    stroke="#f2c84b"
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          <Card>
+            <PanelHead
+              icon={Droplets}
+              title="Water Overview"
+              sub="Historical water consumption"
+              to="/water"
+            />
+
+            <div className="score-row">
+              <Ring
+                value={76}
+                water
+                label="Water Efficiency Score"
+              />
+
+              <div className="metrics">
+                <div>
+                  <span>Water Input</span>
+                  <b>
+                    {num(
+                      waterTotal * 1000,
+                      0
+                    )}{" "}
+                    L
+                  </b>
+                </div>
+
+                <div>
+                  <span>Water Loss</span>
+                  <b className="red">
+                    {num(loss, 2)} kL
+                  </b>
+                </div>
+
+                <div>
+                  <span>Reuse Rate</span>
+                  <b className="green">
+                    67.3%
+                  </b>
+                </div>
+              </div>
+            </div>
+
+            <div className="chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={waterChart}
+                  margin={{ top: 5, right: 10, left: 0, bottom: 25 }}
+                >
+                  <CartesianGrid
+                    stroke="#1c2d43"
+                    vertical={false}
+                  />
+
+                  <XAxis
+                    dataKey="t"
+                    stroke="#61748e"
+                  />
+
+                  <YAxis
+                    stroke="#61748e"
+                  />
+
+                  <Tooltip />
+
+                  <Line
+                    dataKey="v"
+                    stroke="#2cc9ed"
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          <Card>
+            <PanelHead
+              icon={BarChart3}
+              title="Resource Efficiency"
+              sub="Portfolio health"
+              to="/analytics"
+            />
+
+            <div className="radar">
+              <div>
+                ENERGY
+                <br />
+                <b>81</b>
+              </div>
+
+              <div>
+                WATER
+                <br />
+                <b>76</b>
+              </div>
+
+              <div>
+                RECOVERY
+                <br />
+                <b>84</b>
+              </div>
+
+              <div>
+                REUSE
+                <br />
+                <b>67</b>
+              </div>
+
+              <div>
+                SUSTAINABILITY
+                <br />
+                <b>79</b>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <PanelHead
+              icon={Bell}
+              title="Critical Alerts"
+              sub={`${anomalies.length} detected issues`}
+              to="/alerts"
+            />
+
+            <div className="alerts">
+              {anomalies
+                .slice(0, 6)
+                .map((a, i) => (
+                  <button
+                    type="button"
+                    className="alert"
+                    key={
+                      a.anomaly_id ||
+                      `${a.facility_code}-${i}`
+                    }
+                    onClick={() =>
+                      navigate(
+                        `/facilities/${a.facility_code}`
+                      )
+                    }
+                  >
+                    <div
+                      className={`alert-icon ${
+                        String(
+                          a.severity
+                        ).toLowerCase() ===
+                        "critical"
+                          ? "critical"
+                          : ""
+                      }`}
+                    >
+                      <AlertTriangle />
+                    </div>
+
+                    <div>
+                      <b>
+                        {a.anomaly_type}
+                      </b>
+
+                      <span>
+                        {a.facility_code} Ãƒâ€šÃ‚Â·{" "}
+                        {a.description ||
+                          a.sensor_name ||
+                          "Detected anomaly"}
+                      </span>
+                    </div>
+
+                    <time>
+                      {fmtTime(
+                        a.detected_at
+                      )}
+                    </time>
+                  </button>
+                ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+   FACILITIES
+========================= */
+
+function Facilities({
+  facilities,
+  anomalies
+}) {
+  const navigate = useNavigate();
+  const [query, setQuery] =
+    useState("");
+
+  const list = useMemo(() => {
+    const q = query
+      .trim()
+      .toLowerCase();
+
+    if (!q) return facilities;
+
+    return facilities.filter((f) =>
+      `${f.facility_name} ${f.facility_code} ${f.city} ${f.state}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [facilities, query]);
+
+  return (
+    <Page
+      title="Facilities"
+      sub="Every connected facility in the FlowSense portfolio"
+    >
+      <div className="page-toolbar">
+        <div className="search wide">
+          <Search />
+          <input
+            value={query}
+            onChange={(e) =>
+              setQuery(e.target.value)
+            }
+            placeholder="Search facilities..."
+          />
+        </div>
+
+        <span className="result-count">
+          {list.length} facilities
+        </span>
+      </div>
+
+      <Card className="table-card">
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Facility</th>
+                <th>Type</th>
+                <th>Location</th>
+                <th>Status</th>
+                <th>Alerts</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {list.map((f) => (
+                <tr
+                  key={f.facility_code}
+                >
+                  <td>
+                    <b>{f.facility_name}</b>
+                    <small>
+                      {f.facility_code}
+                    </small>
+                  </td>
+
+                  <td>
+                    {f.facility_type ||
+                      "Facility"}
+                  </td>
+
+                  <td>
+                    {f.city}, {f.state}
+                  </td>
+
+                  <td>
+                    <span
+                      className={`status ${getStatus(
+                        f,
+                        anomalies
+                      )
+                        .toLowerCase()
+                        .replaceAll(
+                          " ",
+                          "-"
+                        )}`}
+                    >
+                      {getStatus(
+                        f,
+                        anomalies
+                      )}
+                    </span>
+                  </td>
+
+                  <td>
+                    {
+                      anomalies.filter(
+                        (a) =>
+                          a.facility_code ===
+                          f.facility_code
+                      ).length
+                    }
+                  </td>
+
+                  <td>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() =>
+                        navigate(
+                          `/facilities/${f.facility_code}`
+                        )
+                      }
+                    >
+                      Open ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {!list.length && (
+                <tr>
+                  <td
+                    colSpan="6"
+                    className="no-results"
+                  >
+                    No facilities match your search.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </Page>
+  );
+}
+
+/* =========================
+   RESOURCE PAGES
+========================= */
+
+function Resource({
+  type,
+  facilities
+}) {
+  const {
+    facilityList,
+    getHistory,
+    totals,
+    connection,
+    lastTick
+  } = useFlowSense();
+
+  const [selected, setSelected] = useState("all");
+  const [history, setHistory] = useState([]);
+
+  const isEnergy = type === "energy";
+
+  useEffect(() => {
+    const buildHistory = () => {
+      if (selected === "all") {
+        const points = {};
+
+        facilityList.forEach((facility) => {
+          const rows = getHistory(facility.facility_code);
+
+          rows.forEach((row) => {
+            const date = new Date(row.timestamp);
+
+            if (Number.isNaN(date.getTime())) {
+              return;
+            }
+
+            // Group readings from the same simulator round
+            // into one portfolio point.
+            const bucket =
+              Math.floor(date.getTime() / 1000) * 1000;
+
+            const key = new Date(bucket).toISOString();
+
+            if (!points[key]) {
+              points[key] = {
+                timestamp: key,
+                energy_kwh: 0,
+                water_kl: 0,
+                power_kw: 0,
+                water_flow_lpm: 0
+              };
+            }
+
+            points[key].energy_kwh +=
+              Number(row.energy_kwh) || 0;
+
+            points[key].water_kl +=
+              Number(row.water_kl) || 0;
+
+            points[key].power_kw +=
+              Number(row.power_kw) || 0;
+
+            points[key].water_flow_lpm +=
+              Number(row.water_flow_lpm) || 0;
+          });
+        });
+
+        setHistory(
+          Object.values(points)
+            .sort(
+              (a, b) =>
+                new Date(a.timestamp) -
+                new Date(b.timestamp)
+            )
+            .slice(-60)
+        );
+
+        return;
+      }
+
+      const rows = getHistory(selected) || [];
+
+      setHistory(
+        [...rows]
+          .slice(-60)
+          .sort(
+            (a, b) =>
+              new Date(a.timestamp) -
+              new Date(b.timestamp)
+          )
+      );
+    };
+
+    buildHistory();
+  }, [selected, facilityList, lastTick]);
+
+  const rows = facilityList
+    .map((facility) => ({
+      ...facility,
+
+      energy:
+        Number(facility.energy_kwh) || 0,
+
+      water:
+        Number(facility.water_kl) || 0,
+
+      power:
+        Number(facility.power_kw) || 0,
+
+      flow:
+        Number(facility.water_flow_lpm) || 0,
+
+      pressure:
+        Number(facility.water_pressure_bar) || 0
+    }))
+    .sort((a, b) =>
+      (a.facility_name || "").localeCompare(
+        b.facility_name || ""
+      )
+    );
+
+  const selectedFacility =
+    selected === "all"
+      ? null
+      : rows.find(
+          (facility) =>
+            facility.facility_code === selected
+        );
+
+  const chartData = history.map((row) => ({
+    time: fmtTime(row.timestamp),
+
+    energy:
+      Number(row.energy_kwh) || 0,
+
+    water:
+      Number(row.water_kl) || 0,
+
+    power:
+      Number(row.power_kw) || 0,
+
+    flow:
+      Number(row.water_flow_lpm) || 0
+  }));
+
+  const displayedEnergy = selectedFacility
+    ? selectedFacility.energy
+    : totals.energy;
+
+  const displayedWater = selectedFacility
+    ? selectedFacility.water
+    : totals.water;
+
+  const displayedPower = selectedFacility
+    ? selectedFacility.power
+    : totals.power;
+
+  const displayedFlow = selectedFacility
+    ? selectedFacility.flow
+    : rows.reduce(
+        (sum, facility) =>
+          sum + facility.flow,
+        0
+      );
+
+  const displayedPressure = selectedFacility
+    ? selectedFacility.pressure
+    : rows.length
+      ? rows.reduce(
+          (sum, facility) =>
+            sum + facility.pressure,
+          0
+        ) / rows.length
+      : 0;
+
+  const expectedEnergy = selectedFacility
+    ? Number(
+        selectedFacility.expected_energy_kwh
+      ) || 320
+    : rows.reduce(
+        (sum, facility) =>
+          sum +
+          (Number(
+            facility.expected_energy_kwh
+          ) || 320),
+        0
+      );
+
+  const expectedWater = selectedFacility
+    ? Number(
+        selectedFacility.expected_water_kl
+      ) || 30
+    : rows.reduce(
+        (sum, facility) =>
+          sum +
+          (Number(
+            facility.expected_water_kl
+          ) || 30),
+        0
+      );
+
+  const energyExcess = Math.max(
+    0,
+    displayedEnergy - expectedEnergy
+  );
+
+  const waterLoss = selectedFacility
+    ? Number(
+        selectedFacility.estimated_water_loss_kl
+      ) || 0
+    : totals.waterLoss;
+
+  const latestRows = selectedFacility
+    ? [selectedFacility]
+    : rows;
+
+  return (
+    <Page
+      title={
+        isEnergy
+          ? "Energy Monitoring"
+          : "Water Monitoring"
+      }
+      sub={
+        isEnergy
+          ? "Realtime energy consumption, demand and facility performance"
+          : "Realtime water consumption, flow, pressure and facility performance"
+      }
+    >
+      <div className="page-toolbar">
+        <div className="selectbox">
+          <Building2 />
+
+          <select
+            value={selected}
+            onChange={(event) =>
+              setSelected(event.target.value)
+            }
+          >
+            <option value="all">
+              All Facilities
+            </option>
+
+            {rows.map((facility) => (
+              <option
+                key={facility.facility_code}
+                value={facility.facility_code}
+              >
+                {facility.facility_name} Ãƒâ€šÃ‚Â·{" "}
+                {facility.facility_code}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <span
+          className={`status ${
+            connection === "live"
+              ? "healthy"
+              : "attention"
+          }`}
+        >
+          {connection === "live"
+            ? "ÃƒÂ¢Ã¢â‚¬â€Ã‚Â Live"
+            : "ÃƒÂ¢Ã¢â‚¬â€Ã‚Â Reconnecting"}
+        </span>
+      </div>
+
+      <div className="kpis">
+        <Kpi
+          icon={isEnergy ? Zap : Droplets}
+          label={
+            isEnergy
+              ? "Live Energy"
+              : "Live Water"
+          }
+          value={
+            isEnergy
+              ? `${num(displayedEnergy)} kWh`
+              : `${num(displayedWater, 2)} kL`
+          }
+          sub={
+            selectedFacility
+              ? selectedFacility.facility_name
+              : "All connected facilities"
+          }
+          tone={
+            isEnergy
+              ? "blue"
+              : "cyan"
+          }
+        />
+
+        <Kpi
+          icon={
+            isEnergy
+              ? Activity
+              : Waves
+          }
+          label={
+            isEnergy
+              ? "Power Demand"
+              : "Water Flow"
+          }
+          value={
+            isEnergy
+              ? `${num(displayedPower)} kW`
+              : `${num(displayedFlow)} L/min`
+          }
+          sub="Realtime IoT reading"
+          tone="green"
+        />
+
+        <Kpi
+          icon={
+            isEnergy
+              ? AlertTriangle
+              : Activity
+          }
+          label={
+            isEnergy
+              ? "Excess Consumption"
+              : "Water Loss"
+          }
+          value={
+            isEnergy
+              ? `${num(energyExcess)} kWh`
+              : `${num(waterLoss, 2)} kL`
+          }
+          sub={
+            isEnergy
+              ? "Above expected baseline"
+              : "Estimated unaccounted usage"
+          }
+          tone={
+            (
+              isEnergy
+                ? energyExcess
+                : waterLoss
+            ) > 0
+              ? "red"
+              : "green"
+          }
+        />
+
+        <Kpi
+          icon={
+            isEnergy
+              ? Gauge
+              : Waves
+          }
+          label={
+            isEnergy
+              ? "Expected"
+              : "Pressure"
+          }
+          value={
+            isEnergy
+              ? `${num(expectedEnergy)} kWh`
+              : `${num(displayedPressure, 2)} bar`
+          }
+          sub="Current operating baseline"
+          tone="yellow"
+        />
+      </div>
+
+      <Card className="large-chart">
+        <div className="panel-head">
+          <div>
+            <h2>
+              {isEnergy
+                ? "Realtime Energy Consumption"
+                : "Realtime Water Flow"}
+            </h2>
+
+            <p>
+              {selectedFacility
+                ? selectedFacility.facility_name
+                : "All facilities"}{" "}
+              Ãƒâ€šÃ‚Â· live WebSocket history
+            </p>
+          </div>
+
+          <span className="updated">
+            {lastTick
+              ? `Updated ${fmtTime(lastTick)}`
+              : "Waiting for telemetry..."}
+          </span>
+        </div>
+
+        <div className="chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid
+                stroke="#1c2d43"
+                vertical={false}
+              />
+
+              <XAxis
+                dataKey="time"
+                stroke="#61748e"
+              />
+
+              <YAxis
+                stroke="#61748e"
+              />
+
+              <Tooltip />
+
+              <Line
+                type="monotone"
+                dataKey={
+                  isEnergy
+                    ? "energy"
+                    : "flow"
+                }
+                stroke={
+                  isEnergy
+                    ? "#31aaff"
+                    : "#2cc9ed"
+                }
+                dot={false}
+                strokeWidth={2}
+              />
+
+              {isEnergy && (
+                <Line
+                  type="monotone"
+                  dataKey="power"
+                  stroke="#f2c84b"
+                  dot={false}
+                  strokeWidth={1.5}
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      <Card className="table-card">
+        <div className="panel-head">
+          <div>
+            <h2>
+              {isEnergy
+                ? "Live Energy Readings"
+                : "Live Water Readings"}
+            </h2>
+
+            <p>
+              Latest realtime readings from{" "}
+              {latestRows.length} facilities
+            </p>
+          </div>
+        </div>
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Facility</th>
+                <th>Status</th>
+
+                {isEnergy ? (
+                  <>
+                    <th>Energy</th>
+                    <th>Expected</th>
+                    <th>Power</th>
+                    <th>Excess</th>
+                  </>
+                ) : (
+                  <>
+                    <th>Water</th>
+                    <th>Flow</th>
+                    <th>Pressure</th>
+                    <th>Loss</th>
+                  </>
+                )}
+
+                <th>Updated</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {latestRows.map((facility) => {
+                const excess = Math.max(
+                  0,
+                  facility.energy -
+                    (
+                      Number(
+                        facility.expected_energy_kwh
+                      ) || 320
+                    )
+                );
+
+                const loss =
+                  Number(
+                    facility.estimated_water_loss_kl
+                  ) || 0;
+
+                return (
+                  <tr
+                    key={
+                      facility.facility_code
+                    }
+                  >
+                    <td>
+                      <b>
+                        {facility.facility_name ||
+                          facility.facility_code}
+                      </b>
+
+                      <small>
+                        {facility.facility_code}
+                      </small>
+                    </td>
+
+                    <td>
+                      <span
+                        className={`status ${String(
+                          facility.facility_status ||
+                            "healthy"
+                        )
+                          .toLowerCase()
+                          .replaceAll(
+                            " ",
+                            "-"
+                          )}`}
+                      >
+                        {facility.facility_status ||
+                          "healthy"}
+                      </span>
+                    </td>
+
+                    {isEnergy ? (
+                      <>
+                        <td>
+                          {num(
+                            facility.energy
+                          )}{" "}
+                          kWh
+                        </td>
+
+                        <td>
+                          {num(
+                            Number(
+                              facility.expected_energy_kwh
+                            ) || 320
+                          )}{" "}
+                          kWh
+                        </td>
+
+                        <td>
+                          {num(
+                            facility.power
+                          )}{" "}
+                          kW
+                        </td>
+
+                        <td
+                          className={
+                            excess > 0
+                              ? "red"
+                              : "green"
+                          }
+                        >
+                          {num(excess)} kWh
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td>
+                          {num(
+                            facility.water,
+                            2
+                          )}{" "}
+                          kL
+                        </td>
+
+                        <td>
+                          {num(
+                            facility.flow
+                          )}{" "}
+                          L/min
+                        </td>
+
+                        <td>
+                          {num(
+                            facility.pressure,
+                            2
+                          )}{" "}
+                          bar
+                        </td>
+
+                        <td
+                          className={
+                            loss > 0
+                              ? "red"
+                              : "green"
+                          }
+                        >
+                          {num(loss, 2)} kL
+                        </td>
+                      </>
+                    )}
+
+                    <td>
+                      {fmtTime(
+                        facility.timestamp
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!latestRows.length && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="no-results"
+                  >
+                    Waiting for realtime facility
+                    telemetry...
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </Page>
+  );
+}
+/* =========================
+   ALERTS
+========================= */
+
+function Alerts({ anomalies }) {
+  const navigate = useNavigate();
+
+  return (
+    <Page
+      title="Alerts & Anomalies"
+      sub="Detected abnormal energy, water and equipment conditions"
+    >
+      <Card className="table-card">
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Issue</th>
+                <th>Facility</th>
+                <th>Source</th>
+                <th>Deviation</th>
+                <th>Detected</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {anomalies.map((a, i) => (
+                <tr
+                  key={
+                    a.anomaly_id || i
+                  }
+                >
+                  <td>
+                    <span
+                      className={`status ${String(
+                        a.severity
+                      ).toLowerCase()}`}
+                    >
+                      {a.severity}
+                    </span>
+                  </td>
+
+                  <td>
+                    <b>{a.anomaly_type}</b>
+                    <small>
+                      {a.description ||
+                        "Detected anomaly"}
+                    </small>
+                  </td>
+
+                  <td>
+                    {a.facility_code}
+                  </td>
+
+                  <td>
+                    {a.source_name ||
+                      a.sensor_name ||
+                      "IoT"}
+                  </td>
+
+                  <td>
+                    {num(
+                      a.deviation_percent
+                    )}
+                    %
+                  </td>
+
+                  <td>
+                    {a.detected_at
+                      ? new Date(
+                          a.detected_at
+                        ).toLocaleString()
+                      : "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}
+                  </td>
+
+                  <td>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() =>
+                        navigate(
+                          `/facilities/${a.facility_code}`
+                        )
+                      }
+                    >
+                      Investigate ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {!anomalies.length && (
+                <tr>
+                  <td
+                    colSpan="7"
+                    className="no-results"
+                  >
+                    No anomalies detected.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </Page>
+  );
+}
+
+/* =========================
+   FACILITY DETAIL
+========================= */
+
+function Detail({
+  facilities,
+  anomalies
+}) {
+  const { code } = useParams();
+
+  const facility = facilities.find(
+    (f) => f.facility_code === code
+  );
+
+  const [summary, setSummary] =
+    useState(null);
+
+  const [reconciliation, setReconciliation] =
+    useState([]);
+
+  useEffect(() => {
+    if (!code) return;
+
+    let alive = true;
+
+    Promise.all([
+      api.summary(code),
+      api.reconciliation(code, 50)
+    ])
+      .then(([s, r]) => {
+        if (!alive) return;
+
+        setSummary(s);
+        setReconciliation(
+          Array.isArray(r) ? r : []
+        );
+      })
+      .catch(() => {
+        if (!alive) return;
+        setSummary(null);
+        setReconciliation([]);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [code]);
+
+  if (!facility) {
+    return (
+      <Page
+        title="Facility Not Found"
+        sub="The selected facility is not available."
+      >
+        <Card className="empty big">
+          <AlertTriangle />
+          <h2>
+            Facility unavailable
+          </h2>
+          <p>
+            Check the facility code and try
+            again.
+          </p>
+        </Card>
+      </Page>
+    );
+  }
+
+  const alertCount =
+    anomalies.filter(
+      (a) =>
+        a.facility_code === code
+    ).length;
+
+  return (
+    <Page
+      title={facility.facility_name}
+      sub={`${facility.facility_code} Ãƒâ€šÃ‚Â· ${facility.city}, ${facility.state}`}
+    >
+      <div className="detail-grid">
+        <Kpi
+          icon={Zap}
+          label="Energy"
+          value={`${num(
+            summary?.energy_kwh
+          )} kWh`}
+          sub="Latest reading"
+          tone="blue"
+        />
+
+        <Kpi
+          icon={Droplets}
+          label="Water"
+          value={`${num(
+            summary?.water_kl,
+            2
+          )} kL`}
+          sub="Latest reading"
+          tone="cyan"
+        />
+
+        <Kpi
+          icon={AlertTriangle}
+          label="Alerts"
+          value={alertCount}
+          sub="Detected events"
+          tone="red"
+        />
+
+        <Kpi
+          icon={Cpu}
+          label="IoT Device"
+          value={
+            summary?.iot_device ||
+            "Connected"
+          }
+          sub="Facility device"
+          tone="green"
+        />
+      </div>
+
+      <Card>
+        <PanelHead
+          icon={Activity}
+          title="Resource Reconciliation"
+          sub="Main meter vs IoT-observed resource usage"
+        />
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Resource</th>
+                <th>Main Meter</th>
+                <th>Observed</th>
+                <th>Unaccounted</th>
+                <th>%</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {reconciliation
+                .slice(0, 20)
+                .map((x, i) => (
+                  <tr key={i}>
+                    <td>
+                      {x.resource_type}
+                    </td>
+
+                    <td>
+                      {num(
+                        x.main_meter_value
+                      )}
+                    </td>
+
+                    <td>
+                      {num(
+                        x.observed_iot_value
+                      )}
+                    </td>
+
+                    <td>
+                      {num(
+                        x.unaccounted_value
+                      )}
+                    </td>
+
+                    <td>
+                      {num(
+                        x.unaccounted_percent
+                      )}
+                      %
+                    </td>
+
+                    <td>
+                      {x.status}
+                    </td>
+                  </tr>
+                ))}
+
+              {!reconciliation.length && (
+                <tr>
+                  <td
+                    colSpan="6"
+                    className="no-results"
+                  >
+                    No reconciliation records
+                    available.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </Page>
+  );
+}
+
+/* =========================
+   FUNCTIONAL WORKSPACES
+========================= */
+
+function Analytics({ facilities }) {
+  const {
+    facilityList,
+    alerts,
+    connection,
+    lastTick,
+    getHistory
+  } = useFlowSense();
+
+ const [selectedFacility, setSelectedFacility] =
+    useState("all");
+
+ const [range, setRange] =
+    useState("24h");
+
+ const [view, setView] =
+    useState("energy");
+
+ const liveFacilities =
+    facilityList?.length
+      ? facilityList
+      : facilities || [];
+
+  const selectedFacilities =
+    selectedFacility === "all"
+      ? liveFacilities
+      : liveFacilities.filter(
+          (f) =>
+            f.facility_code === selectedFacility
+        );
+
+  const historyRows = [];
+
+  selectedFacilities.forEach((facility) => {
+    const history =
+      getHistory(facility.facility_code) || [];
+
+    history.forEach((row) => {
+      historyRows.push({
+        ...row,
+        facility_code:
+          facility.facility_code,
+        facility_name:
+          facility.facility_name ||
+          facility.name ||
+          facility.facility_code
+      });
+    });
+  });
+
+  const rangeMs = {
+    "1h": 60 * 60 * 1000,
+    "6h": 6 * 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000
+  }[range];
+
+  const now = Date.now();
+
+  const filteredRows =
+    historyRows
+      .filter((row) => {
+        const timestamp =
+          new Date(row.timestamp).getTime();
+
+        return (
+          Number.isFinite(timestamp) &&
+          now - timestamp <= rangeMs
+        );
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.timestamp) -
+          new Date(b.timestamp)
+      );
+
+  const chartRows =
+    filteredRows.slice(-120).map((row) => ({
+      ...row,
+      time: fmtTime(row.timestamp),
+      energy:
+        Number(row.energy_kwh) || 0,
+      expectedEnergy:
+        Number(row.expected_energy_kwh) || 0,
+      water:
+        Number(row.water_kl) || 0,
+      expectedWater:
+        Number(row.expected_water_kl) || 0,
+      power:
+        Number(row.power_kw) || 0,
+      flow:
+        Number(row.water_flow_lpm) || 0,
+      pressure:
+        Number(row.water_pressure_bar) || 0,
+      energyLoss:
+        Number(
+          row.estimated_energy_loss_kwh
+        ) || 0,
+      waterLoss:
+        Number(
+          row.estimated_water_loss_kl
+        ) || 0
+    }));
+
+  const latestRows =
+    selectedFacilities.map((facility) => {
+      const history =
+        getHistory(
+          facility.facility_code
+        ) || [];
+
+      return {
+        facility,
+        latest:
+          history.length
+            ? history[history.length - 1]
+            : null
+      };
+    });
+
+  const latestEnergy =
+    latestRows.reduce(
+      (sum, item) =>
+        sum +
+        (Number(
+          item.latest?.energy_kwh
+        ) || 0),
+      0
+    );
+
+  const latestExpectedEnergy =
+    latestRows.reduce(
+      (sum, item) =>
+        sum +
+        (Number(
+          item.latest
+            ?.expected_energy_kwh
+        ) || 0),
+      0
+    );
+
+  const latestWater =
+    latestRows.reduce(
+      (sum, item) =>
+        sum +
+        (Number(
+          item.latest?.water_kl
+        ) || 0),
+      0
+    );
+
+  const latestExpectedWater =
+    latestRows.reduce(
+      (sum, item) =>
+        sum +
+        (Number(
+          item.latest
+            ?.expected_water_kl
+        ) || 0),
+      0
+    );
+
+  const energyLoss =
+    latestRows.reduce(
+      (sum, item) =>
+        sum +
+        (Number(
+          item.latest
+            ?.estimated_energy_loss_kwh
+        ) || 0),
+      0
+    );
+
+  const waterLoss =
+    latestRows.reduce(
+      (sum, item) =>
+        sum +
+        (Number(
+          item.latest
+            ?.estimated_water_loss_kl
+        ) || 0),
+      0
+    );
+
+  const avgPower =
+    latestRows.length
+      ? latestRows.reduce(
+          (sum, item) =>
+            sum +
+            (Number(
+              item.latest?.power_kw
+            ) || 0),
+          0
+        ) / latestRows.length
+      : 0;
+
+  const avgFlow =
+    latestRows.length
+      ? latestRows.reduce(
+          (sum, item) =>
+            sum +
+            (Number(
+              item.latest
+                ?.water_flow_lpm
+            ) || 0),
+          0
+        ) / latestRows.length
+      : 0;
+
+  const energyVariance =
+    latestEnergy -
+    latestExpectedEnergy;
+
+  const waterVariance =
+    latestWater -
+    latestExpectedWater;
+
+  const relevantAlerts =
+    alerts.filter(
+      (alert) =>
+        selectedFacility === "all" ||
+        alert.facility_code ===
+          selectedFacility
+    );
+
+  const topDrivers =
+    latestRows
+      .map(({ facility, latest }) => {
+        const energy =
+          Number(facility?.energy_kwh) ||
+          Number(latest?.energy_kwh) ||
+          0;
+
+        const expectedEnergy =
+          Number(facility?.expected_energy_kwh) ||
+          Number(latest?.expected_energy_kwh) ||
+          0;
+
+        const power =
+          Number(facility?.power_kw) ||
+          Number(latest?.power_kw) ||
+          0;
+
+        const reportedLoss =
+          Number(
+            facility?.estimated_energy_loss_kwh
+          );
+
+        const calculatedExcess = Math.max(
+          0,
+          energy - expectedEnergy
+        );
+
+        const energyLoss =
+          Number.isFinite(reportedLoss) && reportedLoss > 0
+            ? Math.max(0, reportedLoss)
+            : calculatedExcess;
+
+        return {
+          facility,
+          power,
+          energy,
+          expectedEnergy,
+          energyLoss,
+
+          // Live driver score:
+          // use actual excess when present,
+          // otherwise use current power demand.
+          driverScore:
+            energyLoss > 0
+              ? energyLoss
+              : power
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.driverScore - a.driverScore
+      )
+      .slice(0, 5);
+
+  return (
+    <Page
+      title="Analytics"
+      sub="Historical patterns, energy drivers, correlations and operating-condition insights"
+    >
+      <div className="analytics-controls">
+        <select
+          value={selectedFacility}
+          onChange={(e) =>
+            setSelectedFacility(
+              e.target.value
+            )
+          }
+        >
+          <option value="all">
+            All Facilities
+          </option>
+
+          {liveFacilities.map(
+            (facility) => (
+              <option
+                key={
+                  facility.facility_code
+                }
+                value={
+                  facility.facility_code
+                }
+              >
+                {facility.facility_name ||
+                  facility.name ||
+                  facility.facility_code}
+              </option>
+            )
+          )}
+        </select>
+
+        <select
+          value={range}
+          onChange={(e) =>
+            setRange(e.target.value)
+          }
+        >
+          <option value="1h">
+            Last 1 Hour
+          </option>
+          <option value="6h">
+            Last 6 Hours
+          </option>
+          <option value="24h">
+            Last 24 Hours
+          </option>
+          <option value="7d">
+            Last 7 Days
+          </option>
+        </select>
+
+        <div className="analytics-tabs">
+          <button
+            className={
+              view === "energy"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setView("energy")
+            }
+          >
+            Energy Analytics
+          </button>
+
+          <button
+            className={
+              view === "water"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setView("water")
+            }
+          >
+            Water Analytics
+          </button>
+
+          <button
+            className={
+              view === "correlation"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setView("correlation")
+            }
+          >
+            Correlation
+          </button>
+        </div>
+
+        <div className="analytics-live">
+          <span
+            className={
+              connection === "live"
+                ? "live-dot"
+                : "live-dot muted"
+            }
+          />
+          {connection === "live"
+            ? "LIVE"
+            : "RECONNECTING"}
+
+          <small>
+            Updated {fmtTime(lastTick)}
+          </small>
+        </div>
+      </div>
+
+      <div className="analytics-kpis">
+        <Card>
+          <PanelHead
+            icon={Zap}
+            title="Energy"
+            sub="Current live state"
+          />
+
+          <strong className="analytics-value">
+            {num(latestEnergy, 1)}
+            <small> kWh</small>
+          </strong>
+
+          <div className="analytics-meta">
+            Expected{" "}
+            {num(
+              latestExpectedEnergy,
+              1
+            )}{" "}
+            kWh
+          </div>
+        </Card>
+
+        <Card>
+          <PanelHead
+            icon={Droplets}
+            title="Water"
+            sub="Current live state"
+          />
+
+          <strong className="analytics-value">
+            {num(latestWater, 1)}
+            <small> kL</small>
+          </strong>
+
+          <div className="analytics-meta">
+            Expected{" "}
+            {num(
+              latestExpectedWater,
+              1
+            )}{" "}
+            kL
+          </div>
+        </Card>
+
+        <Card>
+          <PanelHead
+            icon={Activity}
+            title="Power"
+            sub="Live average"
+          />
+
+          <strong className="analytics-value">
+            {num(avgPower, 1)}
+            <small> kW</small>
+          </strong>
+
+          <div className="analytics-meta">
+            Flow{" "}
+            {num(avgFlow, 1)} L/min
+          </div>
+        </Card>
+
+        <Card>
+          <PanelHead
+            icon={AlertTriangle}
+            title="Anomaly Context"
+            sub="Current monitoring window"
+          />
+
+          <strong className="analytics-value">
+            {relevantAlerts.length}
+          </strong>
+
+          <div className="analytics-meta">
+            Energy variance{" "}
+            {num(
+              energyVariance,
+              1
+            )}{" "}
+            kWh
+          </div>
+        </Card>
+      </div>
+
+      <div className="analytics-main-grid">
+        <Card className="analytics-chart-card">
+          <PanelHead
+            icon={
+              view === "water"
+                ? Droplets
+                : view === "correlation"
+                ? Activity
+                : Zap
+            }
+            title={
+              view === "water"
+                ? "Water Pattern"
+                : view === "correlation"
+                ? "Energy & Operating Conditions"
+                : "Energy Pattern"
+            }
+            sub="Live telemetry history"
+          />
+
+          <div className="analytics-chart">
+            <ResponsiveContainer
+              width="100%"
+              height={320}
+            >
+              <LineChart
+                data={chartRows}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                />
+
+                <XAxis
+                  dataKey="time"
+                  minTickGap={30}
+                />
+
+                <YAxis />
+
+                <Tooltip />
+
+                {view === "water" ? (
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="water"
+                      name="Water"
+                      dot={false}
+                      strokeWidth={2}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="expectedWater"
+                      name="Expected"
+                      dot={false}
+                      strokeWidth={2}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="flow"
+                      name="Flow L/min"
+                      dot={false}
+                      strokeWidth={1.5}
+                    />
+                  </>
+                ) : view === "correlation" ? (
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="energy"
+                      name="Energy"
+                      dot={false}
+                      strokeWidth={2}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="power"
+                      name="Power kW"
+                      dot={false}
+                      strokeWidth={2}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="energy"
+                      name="Actual"
+                      dot={false}
+                      strokeWidth={2}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="expectedEnergy"
+                      name="Expected"
+                      dot={false}
+                      strokeWidth={2}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="power"
+                      name="Power kW"
+                      dot={false}
+                      strokeWidth={1.5}
+                    />
+                  </>
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <Card className="analytics-insight-card">
+          <PanelHead
+            icon={Sparkles}
+            title="Analytics Insights"
+            sub="Derived from measured telemetry"
+          />
+
+          <div className="analytics-insights">
+            <div>
+              <b>Energy variance</b>
+              <span>
+                {energyVariance > 0
+                  ? `${num(
+                      energyVariance,
+                      1
+                    )} kWh above expected`
+                  : "At or below expected"}
+              </span>
+            </div>
+
+            <div>
+              <b>Water variance</b>
+              <span>
+                {waterVariance > 0
+                  ? `${num(
+                      waterVariance,
+                      1
+                    )} kL above expected`
+                  : "At or below expected"}
+              </span>
+            </div>
+
+            <div>
+              <b>Energy loss signal</b>
+              <span>
+                {num(
+                  energyLoss,
+                  1
+                )} kWh estimated
+              </span>
+            </div>
+
+            <div>
+              <b>Water loss signal</b>
+              <span>
+                {num(
+                  waterLoss,
+                  1
+                )} kL estimated
+              </span>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="analytics-secondary-grid">
+        <Card>
+          <PanelHead
+            icon={Zap}
+            title="Top Energy Drivers"
+            sub="Facilities with current loss signals"
+          />
+
+          <div className="analytics-driver-list">
+            {topDrivers.map(
+              (
+                {
+                  facility,
+                  power,
+                  energyLoss
+                },
+                index
+              ) => (
+                <div
+                  className="analytics-driver"
+                  key={
+                    facility.facility_code
+                  }
+                >
+                  <span>
+                    {index + 1}
+                  </span>
+
+                  <div>
+                    <b>
+                      {facility.facility_name ||
+                        facility.name ||
+                        facility.facility_code}
+                    </b>
+
+                    <small>
+                      Power{" "}
+                      {num(
+                        power,
+                        1
+                      )}{" "}
+                      kW
+                    </small>
+                  </div>
+
+                  <strong>
+  {energyLoss > 0
+    ? `${num(energyLoss, 1)} kWh excess`
+    : `${num(power, 1)} kW demand`}
+		</strong>
+                </div>
+              )
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <PanelHead
+            icon={Waves}
+            title="Operating Conditions"
+            sub="Water flow and pressure context"
+          />
+
+          <div className="analytics-condition">
+            <div>
+              <span>
+                Average Flow
+              </span>
+
+              <strong>
+                {num(
+                  avgFlow,
+                  1
+                )}{" "}
+                L/min
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Latest Pressure
+              </span>
+
+              <strong>
+                {num(
+                  chartRows[
+                    chartRows.length - 1
+                  ]?.pressure,
+                  2
+                )}{" "}
+                bar
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                Water Excess
+              </span>
+
+              <strong>
+                {num(
+                  Math.max(
+                    0,
+                    waterVariance
+                  ),
+                  1
+                )}{" "}
+                kL
+              </strong>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card className="analytics-performance-card">
+        <PanelHead
+          icon={ShieldCheck}
+          title="Facility Performance"
+          sub="Live facility telemetry"
+        />
+
+        <div className="analytics-performance-table">
+          <div className="analytics-table-head">
+            <span>Facility</span>
+            <span>Energy</span>
+            <span>Expected</span>
+            <span>Power</span>
+            <span>Water</span>
+            <span>Status</span>
+          </div>
+
+          {latestRows.map(
+            ({
+              facility,
+              latest
+            }) => {
+              const energy =
+                Number(
+                  facility?.energy_kwh ?? latest?.energy_kwh
+                ) || 0;
+
+              const expected =
+                Number(
+                  facility?.expected_energy_kwh ??
+                    latest?.expected_energy_kwh
+                ) || 0;
+
+              const variance =
+                energy - expected;
+
+              return (
+                <div
+                  className="analytics-table-row"
+                  key={
+                    facility.facility_code
+                  }
+                >
+                  <span>
+                    <b>
+                      {facility.facility_name ||
+                        facility.name ||
+                        facility.facility_code}
+                    </b>
+
+                    <small>
+                      {
+                        facility.facility_code
+                      }
+                    </small>
+                  </span>
+
+                  <span>
+                    {num(
+                      energy,
+                      1
+                    )}{" "}
+                    kWh
+                  </span>
+
+                  <span>
+                    {num(
+                      expected,
+                      1
+                    )}{" "}
+                    kWh
+                  </span>
+
+                  <span>
+                    {num(
+                      facility?.power_kw ?? latest?.power_kw,
+                      1
+                    )}{" "}
+                    kW
+                  </span>
+
+                  <span>
+                    {num(
+                      facility?.water_kl ?? latest?.water_kl,
+                      1
+                    )}{" "}
+                    kL
+                  </span>
+
+                  <span
+                    className={
+                      variance > 0
+                        ? "warning"
+                        : "healthy"
+                    }
+                  >
+                    {variance > 0
+                      ? "Watch"
+                      : "Normal"}
+                  </span>
+                </div>
+              );
+            }
+          )}
+        </div>
+      </Card>
+    </Page>
+  );
+}
+
+function AIInsights({
+  anomalies,
+  facilities
+}) {
+  return (
+    <Page
+      title="AI Insights"
+      sub="Evidence-backed intelligence for any FlowSense facility"
+    >
+      <AIInsightsPage
+        anomalies={anomalies}
+        facilities={facilities}
+      />
+    </Page>
+  );
+}
+
+/* =========================
+   REPORTS REALTIME DATA POLICY
+   Raw WebSocket telemetry is preferred for the
+   currently selected facility. Normalized facility
+   state is the fallback. Historical/report-engine
+   values remain separate from the live snapshot.
+========================= */
+
+function Reports() {
+  const {
+    facilityList,
+    connection,
+    lastTick
+  } = useFlowSense();
+
+  const [selectedFacility, setSelectedFacility] =
+    useState("all");
+  const [aiAnalysis, setAiAnalysis] =
+    useState(null);
+  const [aiLoading, setAiLoading] =
+    useState(false);
+  const [aiError, setAiError] =
+    useState("");
+  const [facilityQuery, setFacilityQuery] =
+    useState("");
+
+  const isLive =
+    connection === "live" ||
+    connection === "connected";
+
+  const selected =
+    selectedFacility !== "all"
+      ? facilityList.find(
+          (item) =>
+            item.facility_code === selectedFacility
+        )
+      : null;
+  const realtimeData =
+    selected?._raw?.data || {};
+
+  const live = selected || {};
+
+  const reportValue = (
+    rawValue,
+    normalizedValue,
+    fallback = null
+  ) =>
+    rawValue ??
+    normalizedValue ??
+    fallback;
+
+  const reportNumber = (
+    rawValue,
+    normalizedValue,
+    fallback = null
+  ) => {
+    const value = reportValue(
+      rawValue,
+      normalizedValue,
+      fallback
+    );
+
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+      return null;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number)
+      ? number
+      : fallback;
+  };
+
+  const displayNumber = (
+    rawValue,
+    normalizedValue,
+    digits = 2,
+    suffix = ""
+  ) => {
+    const value = reportNumber(
+      rawValue,
+      normalizedValue
+    );
+
+    return value === null
+      ? "Not available"
+      : `${num(value, digits)}${suffix}`;
+  };
+
+  const primaryAnomaly =
+    live.primary_anomaly ||
+    realtimeData.primary_anomaly ||
+    realtimeData.detection?.primary_anomaly ||
+    null;
+
+  useEffect(() => {
+    if (
+      selectedFacility !== "all" &&
+      !facilityList.some(
+        (item) =>
+          item.facility_code === selectedFacility
+      )
+    ) {
+      setSelectedFacility("all");
+      setAiAnalysis(null);
+    }
+  }, [facilityList, selectedFacility]);
+
+  useEffect(() => {
+    setAiAnalysis(null);
+    setAiError("");
+  }, [selectedFacility]);
+
+  const reportFacilities =
+    selected ? [selected] : facilityList;
+
+  const sum = (key) =>
+    reportFacilities.reduce(
+      (total, item) =>
+        total + (Number(item?.[key]) || 0),
+      0
+    );
+
+  const average = (key) =>
+    reportFacilities.length
+      ? sum(key) / reportFacilities.length
+      : 0;
+
+  const energy = selected
+    ? reportNumber(
+        realtimeData.energy_kwh,
+        live.energy_kwh,
+        0
+      )
+    : sum("energy_kwh");
+
+  const expectedEnergy = selected
+    ? reportNumber(
+        realtimeData.expected_energy_kwh,
+        live.expected_energy_kwh,
+        0
+      )
+    : sum("expected_energy_kwh");
+
+  const water = selected
+    ? reportNumber(
+        realtimeData.water_kl,
+        live.water_kl,
+        0
+      )
+    : sum("water_kl");
+
+  const expectedWater = selected
+    ? reportNumber(
+        realtimeData.expected_water_kl,
+        live.expected_water_kl,
+        0
+      )
+    : sum("expected_water_kl");
+
+  const power = selected
+    ? reportNumber(
+        realtimeData.power_kw,
+        live.power_kw,
+        0
+      )
+    : sum("power_kw");
+
+  const flow = selected
+    ? reportNumber(
+        realtimeData.water_flow_lpm,
+        live.water_flow_lpm,
+        0
+      )
+    : sum("water_flow_lpm");
+
+  const anomalyCount = selected
+    ? Number(
+        realtimeData.anomaly_count ??
+        live.anomaly_count ??
+        0
+      )
+    : reportFacilities.reduce(
+        (total, item) =>
+          total + (Number(item?.anomaly_count) || 0),
+        0
+      );
+
+  const energyScore = average("energy_score");
+  const waterScore = average("water_score");
+
+  const energyVariance =
+    expectedEnergy > 0
+      ? ((energy - expectedEnergy) / expectedEnergy) * 100
+      : 0;
+
+  const waterVariance =
+    expectedWater > 0
+      ? ((water - expectedWater) / expectedWater) * 100
+      : 0;
+
+  const getLiveStatus = (item) => {
+    const value = String(
+      item?.facility_status ||
+        item?.telemetry_status ||
+        "healthy"
+    ).toLowerCase();
+
+    if (
+      value.includes("critical") ||
+      value.includes("danger")
+    ) {
+      return "Critical";
+    }
+
+    if (
+      value.includes("attention") ||
+      value.includes("warning") ||
+      value.includes("anomaly")
+    ) {
+      return "Attention";
+    }
+
+    return "Healthy";
+  };
+
+  const statusCounts = reportFacilities.reduce(
+    (counts, item) => {
+      const value = getLiveStatus(item);
+      counts[value] += 1;
+      return counts;
+    },
+    {
+      Healthy: 0,
+      Attention: 0,
+      Critical: 0
+    }
+  );
+
+  const filteredFacilities = facilityList.filter(
+    (item) => {
+      const q = facilityQuery.trim().toLowerCase();
+
+      if (!q) return true;
+
+      return `${item.facility_name || ""} ${
+        item.facility_code || ""
+      } ${item.city || ""} ${item.state || ""}`
+        .toLowerCase()
+        .includes(q);
+    }
+  );
+
+  const updatedAt =
+    selected?.timestamp || lastTick;
+
+  const handleGenerateAI = async () => {
+    if (!selected) return;
+
+    setAiLoading(true);
+    setAiError("");
+    setAiAnalysis(null);
+
+    try {
+      const response =
+        await api.aiReportAnalysis(
+          selected.facility_code,
+          "24h"
+        );
+
+      if (
+        response?.success === false ||
+        response?.error
+      ) {
+        throw new Error(
+          response.error ||
+            "AI analysis failed"
+        );
+      }
+
+      setAiAnalysis(
+        response.analysis || response
+      );
+    } catch (error) {
+      console.error(
+        "AI report analysis failed:",
+        error
+      );
+
+      setAiError(
+        error?.message ||
+          "Unable to generate AI analysis."
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const downloadPdf = () => {
+    if (!selected) return;
+
+    window.open(
+      api.reportPdfUrl(
+        selected.facility_code,
+        "24h"
+      ),
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
+  const downloadPortfolioPdf = () => {
+    window.open(
+      api.reportPortfolioPdfUrl(
+        "24h"
+      ),
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
+  if (!facilityList.length) {
+    return (
+      <Page
+        title="Reports"
+        sub="Realtime operational intelligence and resource performance"
+      >
+        <Card className="reports-empty">
+          <Activity />
+          <strong>
+            Waiting for realtime facility telemetry
+          </strong>
+          <span>
+            The report workspace will appear as soon
+            as the facility stream is available.
+          </span>
+        </Card>
+      </Page>
+    );
+  }
+
+  return (
+    <Page
+      title="Reports"
+      sub="Realtime operational intelligence and resource performance"
+    >
+      <div className="reports-page">
+        <div className="reports-toolbar">
+          <div className="reports-toolbar-left">
+            <div className="reports-live-status">
+              <span
+                className={`live-dot ${
+                  isLive ? "active" : ""
+                }`}
+              />
+              {isLive ? "LIVE" : "RECONNECTING"}
+            </div>
+
+            <div className="reports-updated">
+              {updatedAt
+                ? `Updated ${new Date(
+                    updatedAt
+                  ).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit"
+                  })}`
+                : "Waiting for telemetry"}
+            </div>
+          </div>
+
+          <div className="reports-toolbar-actions">
+            <div className="reports-select-wrap">
+              <Building2 />
+              <select
+                className="reports-facility-select"
+                value={selectedFacility}
+                onChange={(event) =>
+                  setSelectedFacility(
+                    event.target.value
+                  )
+                }
+              >
+                <option value="all">
+                  All Facilities Ã‚Â· {facilityList.length}
+                </option>
+
+                {facilityList.map((item) => (
+                  <option
+                    key={item.facility_code}
+                    value={item.facility_code}
+                  >
+                    {item.facility_name ||
+                      item.facility_code}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown />
+            </div>
+
+            <button
+              type="button"
+              className="reports-pdf-button"
+              disabled={!selected}
+              onClick={downloadPdf}
+              title={
+                selected
+                  ? "Download the selected facility PDF report"
+                  : "Select a facility to download its report"
+              }
+            >
+              <FileText />
+              Download PDF
+            </button>
+            <button
+  type="button"
+  className="reports-pdf-button"
+  onClick={downloadPortfolioPdf}
+  title="Download the PDF report for all facilities"
+>
+  <FileText />
+  Download All Facilities PDF
+</button>
+          </div>
+        </div>
+
+        {selected ? (
+          <>
+            <div className="reports-facility-header">
+              <div>
+                <div className="reports-facility-name">
+                  {selected.facility_name ||
+                    selected.facility_code}
+                </div>
+
+                <div className="reports-facility-meta">
+                  {selected.facility_code}
+                  {selected.city
+                    ? ` Ã¢â‚¬Â¢ ${selected.city}`
+                    : ""}
+                  {selected.state
+                    ? `, ${selected.state}`
+                    : ""}
+                </div>
+              </div>
+
+              <div
+                className={`reports-status ${getLiveStatus(
+                  selected
+                ).toLowerCase()}`}
+              >
+                <span />
+                {getLiveStatus(selected)}
+              </div>
+            </div>
+
+            <div className="reports-kpi-grid">
+              <Card>
+                <PanelHead
+                  icon={Zap}
+                  title="Energy"
+                  sub="Latest realtime consumption"
+                />
+                <div className="reports-kpi-value">
+                  {num(energy, 2)}
+                  <span> kWh</span>
+                </div>
+                <div className="reports-kpi-detail">
+                  Expected {num(expectedEnergy, 2)} kWh
+                </div>
+                <div
+                  className={`reports-kpi-variance ${
+                    energyVariance > 0
+                      ? "negative"
+                      : "positive"
+                  }`}
+                >
+                  {energyVariance >= 0 ? "+" : ""}
+                  {energyVariance.toFixed(1)}% vs baseline
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={Droplets}
+                  title="Water"
+                  sub="Latest realtime consumption"
+                />
+                <div className="reports-kpi-value">
+                  {num(water, 2)}
+                  <span> kL</span>
+                </div>
+                <div className="reports-kpi-detail">
+                  Expected {num(expectedWater, 2)} kL
+                </div>
+                <div
+                  className={`reports-kpi-variance ${
+                    waterVariance > 0
+                      ? "negative"
+                      : "positive"
+                  }`}
+                >
+                  {waterVariance >= 0 ? "+" : ""}
+                  {waterVariance.toFixed(1)}% vs baseline
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={Gauge}
+                  title="Efficiency"
+                  sub="Current performance"
+                />
+                <div className="reports-kpi-value">
+                  {num(energyScore, 1)}
+                  <span>%</span>
+                </div>
+                <div className="reports-kpi-detail">
+                  Water efficiency {num(waterScore, 1)}%
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={ShieldAlert}
+                  title="Detection"
+                  sub="Realtime intelligence"
+                />
+                <div className="reports-kpi-value">
+                  {anomalyCount}
+                </div>
+                <div className="reports-kpi-detail">
+                  {primaryAnomaly?.anomaly_type ||
+                    primaryAnomaly?.type ||
+                    ((realtimeData.leak_detected ??
+                      live.leak_detected)
+                      ? "Leak detected"
+                      : "No active anomaly")}
+                </div>
+              </Card>
+            </div>
+
+            <div className="reports-section-grid">
+              <Card>
+                <PanelHead
+                  icon={Zap}
+                  title="Energy Performance"
+                  sub="Live operating conditions"
+                />
+                <div className="reports-metric-list">
+                  <MetricItem
+                    label="Power demand"
+                    value={displayNumber(
+                      realtimeData.power_kw,
+                      live.power_kw,
+                      2,
+                      " kW"
+                    )}
+                  />
+                  <MetricItem
+                    label="Energy efficiency"
+                    value={displayNumber(
+                      realtimeData.energy_score,
+                      live.energy_score,
+                      1,
+                      "%"
+                    )}
+                  />
+                  <MetricItem
+                    label="Estimated energy loss"
+                    value={displayNumber(
+                      realtimeData.estimated_energy_loss_kwh,
+                      live.estimated_energy_loss_kwh,
+                      2,
+                      " kWh"
+                    )}
+                  />
+                  <MetricItem
+                    label="Voltage"
+                    value={displayNumber(
+                      realtimeData.voltage_v,
+                      live.voltage_v,
+                      1,
+                      " V"
+                    )}
+                  />
+                  <MetricItem
+                    label="Current"
+                    value={displayNumber(
+                      realtimeData.current_a,
+                      live.current_a,
+                      2,
+                      " A"
+                    )}
+                  />
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={Droplets}
+                  title="Water Performance"
+                  sub="Live operating conditions"
+                />
+                <div className="reports-metric-list">
+                  <MetricItem
+                    label="Flow"
+                    value={displayNumber(
+                      realtimeData.water_flow_lpm,
+                      live.water_flow_lpm,
+                      2,
+                      " L/min"
+                    )}
+                  />
+                  <MetricItem
+                    label="Pressure"
+                    value={displayNumber(
+                      realtimeData.water_pressure_bar,
+                      live.water_pressure_bar,
+                      2,
+                      " bar"
+                    )}
+                  />
+                  <MetricItem
+                    label="Water efficiency"
+                    value={displayNumber(
+                      realtimeData.water_score,
+                      live.water_score,
+                      1,
+                      "%"
+                    )}
+                  />
+                  <MetricItem
+                    label="Estimated water loss"
+                    value={displayNumber(
+                      realtimeData.estimated_water_loss_kl,
+                      live.estimated_water_loss_kl,
+                      2,
+                      " kL"
+                    )}
+                  />
+                  <MetricItem
+                    label="Leak status"
+                    value={
+                      Boolean(
+                        realtimeData.leak_detected ??
+                        live.leak_detected
+                      )
+                        ? "Leak detected"
+                        : "No leak detected"
+                    }
+                  />
+                </div>
+              </Card>
+            </div>
+
+            <div className="reports-section-grid">
+              <Card>
+                <PanelHead
+                  icon={Thermometer}
+                  title="Environmental & Equipment"
+                  sub="Realtime sensor conditions"
+                />
+                <div className="reports-metric-list">
+                  <MetricItem
+                    label="Temperature"
+                    value={displayNumber(
+                      realtimeData.temperature_c,
+                      live.temperature_c,
+                      1,
+                      " Ã‚Â°C"
+                    )}
+                  />
+                  <MetricItem
+                    label="Humidity"
+                    value={displayNumber(
+                      realtimeData.humidity_percent,
+                      live.humidity_percent,
+                      1,
+                      "%"
+                    )}
+                  />
+                  <MetricItem
+                    label="Vibration"
+                    value={displayNumber(
+                      realtimeData.vibration_mm_s,
+                      live.vibration_mm_s,
+                      2,
+                      " mm/s"
+                    )}
+                  />
+                  <MetricItem
+                    label="Treatment rate"
+                    value={displayNumber(
+                      realtimeData.treatment_rate,
+                      live.treatment_rate,
+                      1,
+                      "%"
+                    )}
+                  />
+                  <MetricItem
+                    label="Reuse rate"
+                    value={displayNumber(
+                      realtimeData.reuse_rate,
+                      live.reuse_rate,
+                      1,
+                      "%"
+                    )}
+                  />
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={ShieldAlert}
+                  title="Intelligent Detection"
+                  sub="Realtime anomaly evidence"
+                />
+
+                {primaryAnomaly ? (
+                  <div className="reports-anomaly">
+                    <div className="reports-anomaly-title">
+                      {primaryAnomaly.anomaly_type ||
+                        primaryAnomaly.type ||
+                        "Realtime anomaly"}
+                    </div>
+
+                    <div className="reports-metric-list">
+                      <MetricItem
+                        label="Severity"
+                        value={
+                          primaryAnomaly.severity ||
+                          "Warning"
+                        }
+                      />
+                      <MetricItem
+                        label="Source"
+                        value={
+                          primaryAnomaly.likely_source ||
+                          primaryAnomaly.source_name ||
+                          "Realtime IoT"
+                        }
+                      />
+                      <MetricItem
+                        label="Area"
+                        value={
+                          primaryAnomaly.area_name ||
+                          primaryAnomaly.area ||
+                          primaryAnomaly.location ||
+                          "Detected facility area"
+                        }
+                      />
+                      <MetricItem
+                        label="Confidence"
+                        value={
+                          primaryAnomaly.confidence_percent != null
+                            ? `${num(
+                                primaryAnomaly.confidence_percent,
+                                1
+                              )}%`
+                            : primaryAnomaly.confidence != null
+                              ? `${num(
+                                  primaryAnomaly.confidence,
+                                  1
+                                )}%`
+                              : "Available in detection data"
+                        }
+                      />
+                    </div>
+
+                    <p className="reports-anomaly-description">
+                      {primaryAnomaly.description ||
+                        "Realtime telemetry indicates an abnormal operating condition."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="reports-no-anomaly">
+                    <ShieldCheck />
+                    <div>
+                      <strong>No active realtime anomaly</strong>
+                      <span>
+                        Current detection signals do not report
+                        an active issue.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <Card className="reports-ai-card">
+              <PanelHead
+                icon={Sparkles}
+                title="Ollama AI Analysis"
+                sub="Evidence-based analysis of the latest realtime facility signals"
+              />
+
+              <div className="reports-ai-panel">
+                <div className="reports-ai-intro">
+                  <div className="reports-ai-title">
+                    Generate facility intelligence
+                  </div>
+                  <p>
+                    Ollama analyzes the latest realtime energy,
+                    water, environmental and detection evidence.
+                    Historical records are supplementary only.
+                  </p>
+                  <span className="reports-ai-model">
+                    Local model Ã‚Â· llama3.2:3b
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="reports-ai-button"
+                  disabled={aiLoading || !isLive}
+                  onClick={handleGenerateAI}
+                >
+                  <Sparkles />
+                  {aiLoading
+                    ? "Analyzing live signals..."
+                    : "Generate Analysis"}
+                </button>
+              </div>
+
+              {aiError && (
+                <div className="reports-ai-error">
+                  <AlertTriangle />
+                  {aiError}
+                </div>
+              )}
+
+              {aiAnalysis && (
+                <div className="reports-ai-result">
+                  <div className="reports-ai-summary">
+                    <div className="reports-ai-result-label">
+                      AI Summary
+                    </div>
+                    <div className="reports-ai-result-summary">
+                      {aiAnalysis.summary}
+                    </div>
+                  </div>
+
+                  {Array.isArray(
+                    aiAnalysis.key_findings
+                  ) &&
+                    aiAnalysis.key_findings.length > 0 && (
+                      <div className="reports-ai-block">
+                        <div className="reports-ai-result-label">
+                          Key Findings
+                        </div>
+                        <ul>
+                          {aiAnalysis.key_findings.map(
+                            (finding, index) => (
+                              <li key={index}>
+                                {finding}
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    )}
+
+                  <div className="reports-ai-analysis-grid">
+                    <div className="reports-ai-block">
+                      <div className="reports-ai-result-label">
+                        Energy Analysis
+                      </div>
+                      <p>
+                        {aiAnalysis.energy_analysis ||
+                          "No energy analysis available."}
+                      </p>
+                    </div>
+
+                    <div className="reports-ai-block">
+                      <div className="reports-ai-result-label">
+                        Water Analysis
+                      </div>
+                      <p>
+                        {aiAnalysis.water_analysis ||
+                          "No water analysis available."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {Array.isArray(
+                    aiAnalysis.recommendations
+                  ) &&
+                    aiAnalysis.recommendations.length > 0 && (
+                      <div className="reports-ai-block">
+                        <div className="reports-ai-result-label">
+                          Recommendations
+                        </div>
+                        <ul>
+                          {aiAnalysis.recommendations.map(
+                            (item, index) => (
+                              <li key={index}>
+                                {item}
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      </div>
+                    )}
+
+                  {Array.isArray(
+                    aiAnalysis.priority_actions
+                  ) &&
+                    aiAnalysis.priority_actions.length > 0 && (
+                      <div className="reports-ai-priority">
+                        <div className="reports-ai-result-label">
+                          Priority Actions
+                        </div>
+                        {aiAnalysis.priority_actions.map(
+                          (item, index) => (
+                            <div
+                              className="reports-ai-priority-item"
+                              key={index}
+                            >
+                              <span>{index + 1}</span>
+                              {item}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                </div>
+              )}
+            </Card>
+          </>
+        ) : (
+          <>
+            <div className="reports-portfolio-hero">
+              <div>
+                <div className="reports-eyebrow">
+                  PORTFOLIO LIVE SNAPSHOT
+                </div>
+                <h2>
+                  All {facilityList.length} Facilities
+                </h2>
+                <p>
+                  Live resource performance across the
+                  complete FlowSense facility network.
+                </p>
+              </div>
+
+              <div className="reports-portfolio-status">
+                <span className="live-dot active" />
+                <strong>Realtime stream active</strong>
+                <small>
+                  {statusCounts.Healthy} healthy Ã‚Â·{" "}
+                  {statusCounts.Attention} attention Ã‚Â·{" "}
+                  {statusCounts.Critical} critical
+                </small>
+              </div>
+            </div>
+
+            <div className="reports-kpi-grid">
+              <Card>
+                <PanelHead
+                  icon={Building2}
+                  title="Facilities"
+                  sub="Connected portfolio"
+                />
+                <div className="reports-kpi-value">
+                  {facilityList.length}
+                </div>
+                <div className="reports-kpi-detail">
+                  {statusCounts.Healthy} currently healthy
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={Zap}
+                  title="Energy"
+                  sub="Live portfolio total"
+                />
+                <div className="reports-kpi-value">
+                  {num(energy, 1)}
+                  <span> kWh</span>
+                </div>
+                <div className="reports-kpi-detail">
+                  Expected {num(expectedEnergy, 1)} kWh
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={Droplets}
+                  title="Water"
+                  sub="Live portfolio total"
+                />
+                <div className="reports-kpi-value">
+                  {num(water, 1)}
+                  <span> kL</span>
+                </div>
+                <div className="reports-kpi-detail">
+                  Expected {num(expectedWater, 1)} kL
+                </div>
+              </Card>
+
+              <Card>
+                <PanelHead
+                  icon={ShieldAlert}
+                  title="Detection"
+                  sub="Live anomaly context"
+                />
+                <div className="reports-kpi-value">
+                  {anomalyCount}
+                </div>
+                <div className="reports-kpi-detail">
+                  {statusCounts.Attention +
+                    statusCounts.Critical} facilities need review
+                </div>
+              </Card>
+            </div>
+
+            <Card className="reports-portfolio-table-card">
+              <div className="reports-table-toolbar">
+                <div>
+                  <h2>
+                    <Building2 />
+                    All Facility Live Readings
+                  </h2>
+                  <p>
+                    Select any facility to open its detailed
+                    report and generate an Ollama analysis.
+                  </p>
+                </div>
+
+                <div className="search reports-search">
+                  <Search />
+                  <input
+                    value={facilityQuery}
+                    onChange={(event) =>
+                      setFacilityQuery(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Search facilities..."
+                  />
+                </div>
+              </div>
+
+              <div className="reports-table-wrap">
+                <table className="reports-live-table">
+                  <thead>
+                    <tr>
+                      <th>Facility</th>
+                      <th>Status</th>
+                      <th>Energy</th>
+                      <th>Water</th>
+                      <th>Power</th>
+                      <th>Flow</th>
+                      <th>Efficiency</th>
+                      <th>Alerts</th>
+                      <th />
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {filteredFacilities.map(
+                      (item) => (
+                        <tr
+                          key={item.facility_code}
+                        >
+                          <td>
+                            <b>
+                              {item.facility_name ||
+                                item.facility_code}
+                            </b>
+                            <small>
+                              {item.facility_code}
+                              {item.city
+                                ? ` Ã‚Â· ${item.city}`
+                                : ""}
+                            </small>
+                          </td>
+
+                          <td>
+                            <span
+                              className={`reports-table-status ${getLiveStatus(
+                                item
+                              ).toLowerCase()}`}
+                            >
+                              <span />
+                              {getLiveStatus(item)}
+                            </span>
+                          </td>
+
+                          <td>
+                            {num(
+                              item.energy_kwh,
+                              1
+                            )}{" "}
+                            kWh
+                          </td>
+
+                          <td>
+                            {num(
+                              item.water_kl,
+                              1
+                            )}{" "}
+                            kL
+                          </td>
+
+                          <td>
+                            {num(
+                              item.power_kw,
+                              1
+                            )}{" "}
+                            kW
+                          </td>
+
+                          <td>
+                            {num(
+                              item.water_flow_lpm,
+                              1
+                            )}{" "}
+                            L/min
+                          </td>
+
+                          <td>
+                            {num(
+                              item.energy_score,
+                              1
+                            )}%
+                          </td>
+
+                          <td>
+                            {Number(
+                              item.anomaly_count
+                            ) || 0}
+                          </td>
+
+                          <td>
+                            <button
+                              type="button"
+                              className="reports-open-button"
+                              onClick={() =>
+                                setSelectedFacility(
+                                  item.facility_code
+                                )
+                              }
+                            >
+                              Open Ã¢â€ â€™
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {!filteredFacilities.length && (
+                <div className="no-results">
+                  No facilities match your search.
+                </div>
+              )}
+            </Card>
+
+            <Card className="reports-portfolio-note">
+              <ShieldCheck />
+              <div>
+                <strong>
+                  Facility reports are generated from live
+                  telemetry
+                </strong>
+                <span>
+                  Choose a facility above to access its PDF
+                  report and evidence-based Ollama analysis.
+                </span>
+              </div>
+            </Card>
+          </>
+        )}
+      </div>
+    </Page>
+  );
+}
+
+function Devices() {
+  const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [networkFilter, setNetworkFilter] = useState("all");
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailHealth, setDetailHealth] = useState(null);
+  const [detailNetwork, setDetailNetwork] = useState(null);
+  const [detailUptime, setDetailUptime] = useState(null);
+  const [deviceWsStatus, setDeviceWsStatus] = useState("connecting");
+  const selectedDeviceRef = useRef(null);
+  const devicesRef = useRef([]);
+
+  const getOfflineReason = (health) => {
+    if (health?.offline_reason) {
+      return String(health.offline_reason);
+    }
+
+    const status = String(health?.status || "").toLowerCase();
+    if (status !== "offline") return null;
+
+    const seconds = Number(health?.seconds_since_last_seen);
+    const timeout = Number(health?.heartbeat_timeout_seconds || 120);
+
+    if (Number.isFinite(seconds)) {
+      return `No heartbeat received for ${Math.round(seconds)}s (heartbeat timeout: ${Math.round(timeout)}s)`;
+    }
+
+    return "No recent heartbeat received from the device";
+  };
+
+  useEffect(() => {
+    selectedDeviceRef.current = selectedDevice;
+  }, [selectedDevice]);
+
+  const loadDevices = async (silent = false) => {
+    try {
+      if (silent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      setError("");
+
+      const response = await api.listDevices();
+
+      const rows = Array.isArray(response)
+        ? response
+        : response?.devices || [];
+
+      devicesRef.current = rows;
+      setDevices(rows);
+    } catch (err) {
+      console.error("Device inventory error:", err);
+      setError(
+        err?.message ||
+          "Unable to connect to the FlowSense device service."
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+  let socket = null;
+  let reconnectTimer = null;
+  let stopped = false;
+  let reconnectAttempt = 0;
+
+  const getWebSocketUrl = () => {
+    const base = String(API_BASE_URL || "http://localhost:8000");
+    const parsed = new URL(base);
+
+    parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+    parsed.pathname = `${parsed.pathname.replace(/\/$/, "")}/ws/devices`;
+    parsed.search = "";
+    parsed.hash = "";
+
+    return parsed.toString();
+  };
+
+  const clearReconnectTimer = () => {
+    if (reconnectTimer) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  };
+
+  const scheduleReconnect = () => {
+    if (stopped || reconnectTimer) return;
+
+    reconnectAttempt += 1;
+
+    const delay = Math.min(
+      1000 * Math.pow(1.5, reconnectAttempt - 1),
+      10000
+    );
+
+    setDeviceWsStatus("reconnecting");
+
+    reconnectTimer = window.setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  };
+
+  const connect = () => {
+    if (stopped) return;
+
+    clearReconnectTimer();
+
+    // Never create a second active socket.
+    if (
+      socket &&
+      (
+        socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING
+      )
+    ) {
+      return;
+    }
+
+    setDeviceWsStatus("connecting");
+
+    let currentSocket;
+
+    try {
+      currentSocket = new WebSocket(getWebSocketUrl());
+      socket = currentSocket;
+    } catch (error) {
+      console.error("[DeviceWS] Connection creation failed:", error);
+      socket = null;
+      setDeviceWsStatus("disconnected");
+      scheduleReconnect();
+      return;
+    }
+
+    currentSocket.onopen = () => {
+      if (stopped || socket !== currentSocket) return;
+
+      reconnectAttempt = 0;
+      setDeviceWsStatus("live");
+
+      console.log("[DeviceWS] Connected");
+    };
+
+    currentSocket.onmessage = (event) => {
+      if (stopped || socket !== currentSocket) return;
+
+      try {
+        const message = JSON.parse(event.data || "{}");
+
+        // Backend keepalive messages.
+        if (
+          message.type === "heartbeat" ||
+          message.type === "pong"
+        ) {
+          return;
+        }
+
+        if (message.type !== "device_heartbeat") {
+          return;
+        }
+
+        const deviceCode = message.device_code;
+
+        if (!deviceCode) return;
+
+        console.log(
+          "[DeviceWS] Heartbeat:",
+          deviceCode
+        );
+
+        setDevices((currentDevices) =>
+          currentDevices.map((device) => {
+            if (device.device_code !== deviceCode) {
+              return device;
+            }
+
+            return {
+              ...device,
+              status:
+                message.database_status ||
+                message.device_status ||
+                "online",
+              realtime_status:
+                message.status ||
+                "online",
+              last_seen_at:
+                message.last_seen_at ||
+                message.heartbeat_at ||
+                device.last_seen_at,
+              network_type:
+                message.network_type ||
+                device.network_type,
+              network_identifier:
+                message.network_identifier ||
+                device.network_identifier,
+              firmware_version:
+                message.firmware_version ||
+                device.firmware_version,
+              offline_reason: null,
+              seconds_since_last_seen: 0,
+              heartbeat_timeout_seconds:
+                device.heartbeat_timeout_seconds || 120,
+            };
+          })
+        );
+
+        const currentSelectedDevice =
+          selectedDeviceRef.current;
+
+        if (
+          currentSelectedDevice &&
+          currentSelectedDevice.device_code === deviceCode
+        ) {
+          setSelectedDevice((currentSelected) => {
+            if (
+              !currentSelected ||
+              currentSelected.device_code !== deviceCode
+            ) {
+              return currentSelected;
+            }
+
+            return {
+              ...currentSelected,
+              status:
+                message.database_status ||
+                message.device_status ||
+                "online",
+              realtime_status:
+                message.status ||
+                "online",
+              last_seen_at:
+                message.last_seen_at ||
+                message.heartbeat_at ||
+                currentSelected.last_seen_at,
+              network_type:
+                message.network_type ||
+                currentSelected.network_type,
+              network_identifier:
+                message.network_identifier ||
+                currentSelected.network_identifier,
+              firmware_version:
+                message.firmware_version ||
+                currentSelected.firmware_version,
+            };
+          });
+
+          setDetailHealth((currentHealth) => ({
+            ...(currentHealth || {}),
+            device_code: deviceCode,
+            status: message.status || "online",
+            database_status:
+              message.database_status ||
+              currentHealth?.database_status ||
+              "online",
+            last_seen_at:
+              message.last_seen_at ||
+              message.heartbeat_at ||
+              currentHealth?.last_seen_at,
+            checked_at: new Date().toISOString(),
+            seconds_since_last_seen: 0,
+            heartbeat_timeout_seconds:
+              currentHealth?.heartbeat_timeout_seconds || 120,
+            offline_reason: null,
+            evidence: null,
+            network_type:
+              message.network_type ||
+              currentHealth?.network_type,
+            network_identifier:
+              message.network_identifier ||
+              currentHealth?.network_identifier,
+            firmware_version:
+              message.firmware_version ||
+              currentHealth?.firmware_version,
+            signal_strength:
+              message.signal_strength ??
+              currentHealth?.signal_strength,
+          }));
+        }
+      } catch (error) {
+        console.error(
+          "[DeviceWS] Message parsing error:",
+          error
+        );
+      }
+    };
+
+    currentSocket.onerror = (event) => {
+      if (stopped || socket !== currentSocket) return;
+
+      console.warn("[DeviceWS] Socket error", event);
+      setDeviceWsStatus("disconnected");
+    };
+
+    currentSocket.onclose = (event) => {
+      if (socket === currentSocket) {
+        socket = null;
+      }
+
+      if (stopped) {
+        return;
+      }
+
+      console.warn(
+        `[DeviceWS] Closed: code=${event.code}, reason=${event.reason || "none"}`
+      );
+
+      setDeviceWsStatus("reconnecting");
+      scheduleReconnect();
+    };
+  };
+
+  connect();
+
+  return () => {
+    stopped = true;
+    clearReconnectTimer();
+
+    const currentSocket = socket;
+    socket = null;
+
+    if (currentSocket) {
+      currentSocket.onopen = null;
+      currentSocket.onmessage = null;
+      currentSocket.onerror = null;
+      currentSocket.onclose = null;
+
+      if (
+        currentSocket.readyState === WebSocket.OPEN ||
+        currentSocket.readyState === WebSocket.CONNECTING
+      ) {
+        currentSocket.close(1000, "Devices page cleanup");
+      }
+    }
+  };
+}, []);
+
+  const openDevice = async (device) => {
+    setSelectedDevice(device);
+    setDetailLoading(true);
+
+    try {
+      const [health, network, uptime] =
+        await Promise.all([
+          api.deviceRealtimeHealth(device.device_code),
+          api.deviceNetwork(device.device_code),
+          api.deviceUptime(
+            device.device_code,
+            24
+          )
+        ]);
+
+      setDetailHealth((currentHealth) => {
+        const currentSeen = currentHealth?.last_seen_at
+          ? new Date(currentHealth.last_seen_at).getTime()
+          : 0;
+        const incomingSeen = health?.last_seen_at
+          ? new Date(health.last_seen_at).getTime()
+          : 0;
+
+        return incomingSeen >= currentSeen
+          ? health
+          : currentHealth;
+      });
+      setDetailNetwork(network);
+      setDetailUptime(uptime);
+    } catch (err) {
+      console.error(
+        "Device detail error:",
+        err
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let stopped = false;
+
+    const refreshAllDeviceHealth = async () => {
+      const currentDevices = devicesRef.current;
+      if (!currentDevices.length) return;
+
+      const results = await Promise.allSettled(
+        currentDevices.map(async (device) => {
+          const health = await api.deviceRealtimeHealth(
+            device.device_code
+          );
+          return { device, health };
+        })
+      );
+
+      if (stopped) return;
+
+      const healthByCode = new Map();
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const { device, health } = result.value;
+        if (health?.device_code || device?.device_code) {
+          healthByCode.set(
+            health?.device_code || device.device_code,
+            health
+          );
+        }
+      }
+
+      if (!healthByCode.size) return;
+
+      setDevices((currentDevices) => {
+        const updated = currentDevices.map((device) => {
+          const health = healthByCode.get(device.device_code);
+          if (!health) return device;
+
+          return {
+            ...device,
+            status:
+              health.database_status ||
+              device.status,
+            realtime_status:
+              health.status ||
+              device.realtime_status ||
+              device.status,
+            last_seen_at:
+              health.last_seen_at ||
+              device.last_seen_at,
+            network_type:
+              health.network_type ||
+              device.network_type,
+            network_identifier:
+              health.network_identifier ||
+              device.network_identifier,
+            offline_reason:
+              getOfflineReason(health),
+            seconds_since_last_seen:
+              health.seconds_since_last_seen,
+            heartbeat_timeout_seconds:
+              health.heartbeat_timeout_seconds ||
+              device.heartbeat_timeout_seconds ||
+              120,
+          };
+        });
+
+        devicesRef.current = updated;
+        return updated;
+      });
+
+      const selected = selectedDeviceRef.current;
+      if (selected?.device_code) {
+        const selectedHealth = healthByCode.get(
+          selected.device_code
+        );
+
+        if (selectedHealth) {
+          setSelectedDevice((currentSelected) =>
+            currentSelected
+              ? {
+                  ...currentSelected,
+                  status:
+                    selectedHealth.database_status ||
+                    currentSelected.status,
+                  realtime_status:
+                    selectedHealth.status ||
+                    currentSelected.realtime_status ||
+                    currentSelected.status,
+                  last_seen_at:
+                    selectedHealth.last_seen_at ||
+                    currentSelected.last_seen_at,
+                  offline_reason:
+                    getOfflineReason(selectedHealth),
+                  seconds_since_last_seen:
+                    selectedHealth.seconds_since_last_seen,
+                  heartbeat_timeout_seconds:
+                    selectedHealth.heartbeat_timeout_seconds ||
+                    currentSelected.heartbeat_timeout_seconds ||
+                    120,
+                }
+              : currentSelected
+          );
+
+          setDetailHealth((currentHealth) => {
+            const currentSeen = currentHealth?.last_seen_at
+              ? new Date(currentHealth.last_seen_at).getTime()
+              : 0;
+            const incomingSeen = selectedHealth?.last_seen_at
+              ? new Date(selectedHealth.last_seen_at).getTime()
+              : 0;
+
+            if (
+              selectedHealth?.status === "offline" ||
+              incomingSeen >= currentSeen
+            ) {
+              return {
+                ...selectedHealth,
+                offline_reason:
+                  getOfflineReason(selectedHealth),
+              };
+            }
+
+            return currentHealth;
+          });
+        }
+      }
+    };
+
+    refreshAllDeviceHealth();
+    const interval = window.setInterval(
+      refreshAllDeviceHealth,
+      5000
+    );
+
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+  if (!selectedDevice) return;
+
+  let stopped = false;
+
+  const refreshHealth = async () => {
+    try {
+      const health = await api.deviceRealtimeHealth(
+        selectedDevice.device_code
+      );
+
+      if (!stopped) {
+        setDetailHealth((currentHealth) => {
+          const currentSeen = currentHealth?.last_seen_at
+            ? new Date(currentHealth.last_seen_at).getTime()
+            : 0;
+          const incomingSeen = health?.last_seen_at
+            ? new Date(health.last_seen_at).getTime()
+            : 0;
+
+          return incomingSeen >= currentSeen
+            ? health
+            : currentHealth;
+        });
+      }
+    } catch (err) {
+      console.error("Realtime device health error:", err);
+    }
+  };
+
+  refreshHealth();
+
+  const interval = window.setInterval(
+    refreshHealth,
+    5000
+  );
+
+  return () => {
+    stopped = true;
+    window.clearInterval(interval);
+  };
+}, [selectedDevice]);
+
+  const getRealtimeStatus = (device) => {
+    const status =
+      device?.realtime_status ||
+      device?.status ||
+      "unknown";
+
+    return String(status).toLowerCase();
+  };
+
+  const filteredDevices = useMemo(() => {
+    const query = search
+      .trim()
+      .toLowerCase();
+
+    return devices.filter((device) => {
+      const realtimeStatus =
+        getRealtimeStatus(device);
+
+      const matchesSearch =
+        !query ||
+        [
+          device.device_code,
+          device.device_name,
+          device.device_model,
+          device.installation_location,
+          device.serial_number,
+          device.network_type
+        ]
+          .filter(Boolean)
+          .some((value) =>
+            String(value)
+              .toLowerCase()
+              .includes(query)
+          );
+
+      const matchesStatus =
+        statusFilter === "all" ||
+        realtimeStatus === statusFilter;
+
+      const network =
+        device.network_type ||
+        "unknown";
+
+      const matchesNetwork =
+        networkFilter === "all" ||
+        network === networkFilter;
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesNetwork
+      );
+    });
+  }, [
+    devices,
+    search,
+    statusFilter,
+    networkFilter
+  ]);
+
+  const total = devices.length;
+
+  const online = devices.filter(
+    (device) =>
+      getRealtimeStatus(device) ===
+      "online"
+  ).length;
+
+  const offline = devices.filter(
+    (device) =>
+      getRealtimeStatus(device) ===
+      "offline"
+  ).length;
+
+  const maintenance = devices.filter(
+    (device) =>
+      getRealtimeStatus(device) ===
+      "maintenance"
+  ).length;
+
+  const networkTypes = [
+    ...new Set(
+      devices
+        .map((device) => device.network_type)
+        .filter(Boolean)
+    )
+  ];
+
+  const formatDateTime = (value) => {
+    if (!value) return "Ã¢â‚¬â€";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "Ã¢â‚¬â€";
+    }
+
+    return date.toLocaleString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "Ã¢â‚¬â€";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "Ã¢â‚¬â€";
+    }
+
+    return date.toLocaleDateString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  };
+
+  const statusLabel = (status) => {
+    if (status === "online") return "Online";
+    if (status === "offline") return "Offline";
+    if (status === "maintenance")
+      return "Maintenance";
+
+    return "Unknown";
+  };
+
+  const warrantyLabel = (status) => {
+    if (status === "active")
+      return "Active";
+
+    if (status === "expired")
+      return "Expired";
+
+    if (status === "not_started")
+      return "Not Started";
+
+    return "Unknown";
+  };
+
+  return (
+    <Page
+      title="IoT Devices"
+      sub="Live device connectivity, network health and asset lifecycle"
+    >
+      <div className="device-workspace">
+
+        <div className="device-hero">
+          <div>
+            <div className="device-hero-eyebrow">
+              <span className="live-pulse" />
+              LIVE DEVICE INVENTORY
+            </div>
+
+            <div className={`device-ws-status device-ws-${deviceWsStatus}`}>
+              <span className="device-ws-dot" />
+              {deviceWsStatus === "live"
+                ? "WebSocket LIVE"
+                : deviceWsStatus === "reconnecting"
+                  ? "WebSocket RECONNECTING"
+                  : deviceWsStatus === "connecting"
+                    ? "WebSocket CONNECTING"
+                    : "REST FALLBACK"}
+            </div>
+
+            <h2>
+              Connected Asset Network
+            </h2>
+
+            <p>
+              Monitor the actual FlowSense IoT
+              devices registered in the backend,
+              their connectivity and lifecycle.
+            </p>
+          </div>
+
+          <button
+            className="device-refresh"
+            onClick={() => loadDevices(true)}
+            disabled={refreshing}
+          >
+            <RefreshCw
+              size={16}
+              className={
+                refreshing
+                  ? "spin"
+                  : ""
+              }
+            />
+            {refreshing
+              ? "Refreshing..."
+              : "Refresh"}
+          </button>
+        </div>
+
+        <div className="device-kpi-grid">
+
+          <div className="device-stat-card">
+            <div className="device-stat-icon">
+              <Cpu size={20} />
+            </div>
+
+            <div>
+              <span>Total Devices</span>
+              <strong>{total}</strong>
+              <small>
+                Registered assets
+              </small>
+            </div>
+          </div>
+
+          <div className="device-stat-card online">
+            <div className="device-stat-icon">
+              <Activity size={20} />
+            </div>
+
+            <div>
+              <span>Online</span>
+              <strong>{online}</strong>
+              <small>
+                Heartbeat within threshold
+              </small>
+            </div>
+          </div>
+
+          <div className="device-stat-card offline">
+            <div className="device-stat-icon">
+              <ShieldAlert size={20} />
+            </div>
+
+            <div>
+              <span>Offline</span>
+              <strong>{offline}</strong>
+              <small>
+                No recent heartbeat
+              </small>
+            </div>
+          </div>
+
+          <div className="device-stat-card maintenance">
+            <div className="device-stat-icon">
+              <Settings size={20} />
+            </div>
+
+            <div>
+              <span>Maintenance</span>
+              <strong>{maintenance}</strong>
+              <small>
+                Maintenance state
+              </small>
+            </div>
+          </div>
+
+        </div>
+
+        <Card className="device-inventory-card">
+
+          <PanelHead
+            icon={Cpu}
+            title="Device Inventory"
+            sub={`${filteredDevices.length} of ${total} devices`}
+          />
+
+          <div className="device-toolbar">
+
+            <div className="device-search-box">
+              <Search size={17} />
+
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(
+                    event.target.value
+                  )
+                }
+                placeholder="Search device, model, serial or location..."
+              />
+
+              {search && (
+                <button
+                  onClick={() =>
+                    setSearch("")
+                  }
+                  className="device-search-clear"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(
+                  event.target.value
+                )
+              }
+            >
+              <option value="all">
+                All Status
+              </option>
+              <option value="online">
+                Online
+              </option>
+              <option value="offline">
+                Offline
+              </option>
+              <option value="maintenance">
+                Maintenance
+              </option>
+            </select>
+
+            <select
+              value={networkFilter}
+              onChange={(event) =>
+                setNetworkFilter(
+                  event.target.value
+                )
+              }
+            >
+              <option value="all">
+                All Networks
+              </option>
+
+              {networkTypes.map(
+                (network) => (
+                  <option
+                    key={network}
+                    value={network}
+                  >
+                    {network}
+                  </option>
+                )
+              )}
+            </select>
+
+          </div>
+
+          {error && (
+            <div className="device-error">
+              <ShieldAlert size={18} />
+
+              <div>
+                <strong>
+                  Backend connection problem
+                </strong>
+
+                <span>
+                  {error}
+                </span>
+              </div>
+
+              <button
+                onClick={() =>
+                  loadDevices()
+                }
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="device-loading">
+              <RefreshCw
+                size={22}
+                className="spin"
+              />
+
+              <span>
+                Loading live device inventory...
+              </span>
+            </div>
+          ) : filteredDevices.length === 0 ? (
+            <div className="device-empty">
+              <Cpu size={34} />
+
+              <strong>
+                No devices found
+              </strong>
+
+              <span>
+                Try changing the search or
+                filter.
+              </span>
+            </div>
+          ) : (
+            <div className="device-table-wrap">
+
+              <table className="device-table">
+
+                <thead>
+                  <tr>
+                    <th>Device</th>
+                    <th>Facility</th>
+                    <th>Network</th>
+                    <th>Status</th>
+                    <th>Last Heartbeat</th>
+                    <th>Warranty</th>
+                    <th />
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredDevices.map(
+                    (device) => {
+                      const status =
+                        getRealtimeStatus(
+                          device
+                        );
+
+                      return (
+                        <tr
+                          key={
+                            device.iot_device_id ||
+                            device.device_code
+                          }
+                        >
+
+                          <td>
+                            <div className="device-primary">
+                              <div className="device-avatar">
+                                <Cpu size={17} />
+                              </div>
+
+                              <div>
+                                <strong>
+                                  {
+                                    device.device_code
+                                  }
+                                </strong>
+
+                                <span>
+                                  {
+                                    device.device_name ||
+                                    device.device_model ||
+                                    "FlowSense IoT Device"
+                                  }
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td>
+                            <div className="device-location">
+                              <strong>
+                                {
+                                  device.facility_code ||
+                                  "Ã¢â‚¬â€"
+                                }
+                              </strong>
+
+                              <span>
+                                {
+                                  device.installation_location ||
+                                  "Location not configured"
+                                }
+                              </span>
+                            </div>
+                          </td>
+
+                          <td>
+                            <div className="network-cell">
+                              <strong>
+                                {
+                                  device.network_type ||
+                                  "Ã¢â‚¬â€"
+                                }
+                              </strong>
+
+                              <span>
+                                {
+                                  device.network_identifier ||
+                                  "Identifier unavailable"
+                                }
+                              </span>
+                            </div>
+                          </td>
+
+                          <td>
+                            <div>
+                              <span
+                                className={`device-status-badge ${status}`}
+                                title={
+                                  status === "offline"
+                                    ? device.offline_reason ||
+                                      "No recent heartbeat received from the device"
+                                    : ""
+                                }
+                              >
+                                <span className="status-dot" />
+                                {statusLabel(
+                                  status
+                                )}
+                              </span>
+
+                              {status === "offline" && (
+                                <div
+                                  style={{
+                                    marginTop: "4px",
+                                    fontSize: "11px",
+                                    opacity: 0.75,
+                                    maxWidth: "220px",
+                                  }}
+                                >
+                                  {device.offline_reason ||
+                                    "No recent heartbeat received"}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td>
+                            <span className="heartbeat-time">
+                              {formatDateTime(
+                                device.last_seen_at
+                              )}
+                            </span>
+                          </td>
+
+                          <td>
+                            <span
+                              className={`warranty-badge ${device.warranty_status || "unknown"}`}
+                            >
+                              {warrantyLabel(
+                                device.warranty_status
+                              )}
+                            </span>
+                          </td>
+
+                          <td>
+                            <button
+                              className="device-view-button"
+                              onClick={() =>
+                                openDevice(
+                                  device
+                                )
+                              }
+                            >
+                              View
+                              <ChevronDown
+                                size={15}
+                                style={{
+                                  transform:
+                                    "rotate(-90deg)"
+                                }}
+                              />
+                            </button>
+                          </td>
+
+                        </tr>
+                      );
+                    }
+                  )}
+                </tbody>
+
+              </table>
+
+            </div>
+          )}
+
+          <div className="device-footer">
+
+            <span>
+              <span className="live-pulse small" />
+              Live sync every 5 seconds
+            </span>
+
+            <span>
+              Showing{" "}
+              <strong>
+                {filteredDevices.length}
+              </strong>{" "}
+              devices
+            </span>
+
+          </div>
+
+        </Card>
+
+      </div>
+
+      {selectedDevice && (
+        <div
+          className="device-modal-overlay"
+          onClick={() =>
+            setSelectedDevice(null)
+          }
+        >
+          <div
+            className="device-modal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+
+            <div className="device-modal-top">
+
+              <div>
+                <div className="device-modal-eyebrow">
+                  DEVICE ASSET
+                </div>
+
+                <h2>
+                  {
+                    selectedDevice.device_code
+                  }
+                </h2>
+
+                <span>
+                  {
+                    selectedDevice.device_model ||
+                    "FlowSense IoT Device"
+                  }
+                </span>
+              </div>
+
+              <button
+                className="device-modal-close"
+                onClick={() =>
+                  setSelectedDevice(null)
+                }
+              >
+                <X size={20} />
+              </button>
+
+            </div>
+
+            <div className="device-modal-status">
+              <span
+                className={`device-status-badge ${
+                  detailHealth?.status ||
+                  getRealtimeStatus(
+                    selectedDevice
+                  )
+                }`}
+              >
+                <span className="status-dot" />
+
+                {statusLabel(
+                  detailHealth?.status ||
+                    getRealtimeStatus(
+                      selectedDevice
+                    )
+                )}
+              </span>
+
+              {detailHealth?.seconds_since_last_seen !=
+                null && (
+                <span>
+                  Last heartbeat{" "}
+                  {
+                    detailHealth.seconds_since_last_seen
+                  }s ago
+                </span>
+              )}
+            </div>
+
+            {detailLoading ? (
+              <div className="device-detail-loading">
+                <RefreshCw
+                  size={20}
+                  className="spin"
+                />
+                Loading live device details...
+              </div>
+            ) : (
+              <div className="device-detail-grid">
+
+                <section className="device-detail-section">
+
+                  <h3>
+                    Device Information
+                  </h3>
+
+                  <div className="device-detail-row">
+                    <span>Device Code</span>
+                    <strong>
+                      {
+                        selectedDevice.device_code
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Model</span>
+                    <strong>
+                      {
+                        selectedDevice.device_model ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Firmware</span>
+                    <strong>
+                      {
+                        selectedDevice.firmware_version ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Protocol</span>
+                    <strong>
+                      {
+                        selectedDevice.communication_protocol ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Serial Number</span>
+                    <strong>
+                      {
+                        selectedDevice.serial_number ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                </section>
+
+                <section className="device-detail-section">
+
+                  <h3>
+                    Live Network Health
+                  </h3>
+
+                  <div className="device-detail-row">
+                    <span>Technology</span>
+                    <strong>
+                      {
+                        detailHealth?.network_type ||
+                        selectedDevice.network_type ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Network ID</span>
+                    <strong>
+                      {
+                        detailHealth?.network_identifier ||
+                        selectedDevice.network_identifier ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Database Status</span>
+                    <strong>
+                      {
+                        detailHealth?.database_status ||
+                        selectedDevice.status ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Realtime Status</span>
+                    <strong>
+                      {
+                        detailHealth?.status ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Offline Reason</span>
+                    <strong>
+                      {
+                        detailHealth?.offline_reason ||
+                        getOfflineReason(detailHealth) ||
+                        "No offline reason â€” device is currently online"
+                      }
+                    </strong>
+                  </div>
+
+                </section>
+
+                <section className="device-detail-section">
+
+                  <h3>
+                    Installation & Lifecycle
+                  </h3>
+
+                  <div className="device-detail-row">
+                    <span>Installation</span>
+                    <strong>
+                      {formatDate(
+                        selectedDevice.installation_date
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Commissioned</span>
+                    <strong>
+                      {formatDate(
+                        selectedDevice.commissioned_at
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Decommissioned</span>
+                    <strong>
+                      {formatDate(
+                        selectedDevice.decommissioned_at
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Reason</span>
+                    <strong>
+                      {
+                        selectedDevice.decommission_reason ||
+                        "Ã¢â‚¬â€"
+                      }
+                    </strong>
+                  </div>
+
+                </section>
+
+                <section className="device-detail-section">
+
+                  <h3>
+                    Warranty & Uptime
+                  </h3>
+
+                  <div className="device-detail-row">
+                    <span>Warranty</span>
+                    <strong>
+                      {warrantyLabel(
+                        selectedDevice.warranty_status
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Warranty Start</span>
+                    <strong>
+                      {formatDate(
+                        selectedDevice.warranty_start_date
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>Warranty End</span>
+                    <strong>
+                      {formatDate(
+                        selectedDevice.warranty_end_date
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="device-detail-row">
+                    <span>24h Uptime</span>
+                    <strong>
+                      {detailUptime?.data_complete &&
+                      detailUptime.uptime_percent != null
+                        ? `${Number(
+                            detailUptime.uptime_percent
+                          ).toFixed(1)}%`
+                        : detailUptime?.observed_uptime_percent != null
+                        ? `${Number(
+                            detailUptime.observed_uptime_percent
+                          ).toFixed(1)}% (observed)`
+                        : "Ã¢â‚¬â€"}
+                    </strong>
+                  </div>
+
+                  {detailUptime && (
+                    <div className="device-uptime-meta">
+                      <div>
+                        Observed uptime: {" "}
+                        {detailUptime.observed_uptime_percent != null
+                          ? `${Number(
+                              detailUptime.observed_uptime_percent
+                            ).toFixed(1)}%`
+                          : "Ã¢â‚¬â€"}
+                      </div>
+
+                      <div>
+                        Data coverage: {" "}
+                        {detailUptime.coverage_percent != null
+                          ? `${Number(
+                              detailUptime.coverage_percent
+                            ).toFixed(1)}%`
+                          : "0.0%"}
+                      </div>
+
+                      {!detailUptime.data_complete && (
+                        <div>
+                          Showing observed uptime from the real heartbeat history currently available.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                </section>
+
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+    </Page>
+  );
+}
+
+/* =========================
+   APP
+========================= */
+
+function App() {
+  const {
+    facilityList,
+    alerts,
+    connection,
+    lastTick,
+  } = useFlowSense();
+
+ const [selected, setSelected] = useState("all");
+
+ useEffect(() => {
+  if (
+    selected !== "all" &&
+    !facilityList.some(
+      (facility) =>
+        facility.facility_code === selected
+    )
+  ) {
+    setSelected("all");
+  }
+}, [facilityList, selected]);
+
+  const refresh = () => {
+    window.location.reload();
+  };
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={<Login />}
+      />
+
+      <Route
+        path="/register"
+        element={<Register />}
+      />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<Shell anomalies={alerts} />}>
+          <Route
+            path="/"
+            element={
+              <RealtimeOverview
+                facilities={facilityList}
+                anomalies={alerts}
+                selected={selected}
+                setSelected={setSelected}
+                onRefresh={refresh}
+              />
+            }
+          />
+
+          <Route
+            path="/legacy-overview"
+            element={
+              <Overview
+                facilities={facilityList}
+                anomalies={alerts}
+                selected={selected}
+                setSelected={setSelected}
+                onRefresh={refresh}
+              />
+            }
+          />
+
+          <Route
+            path="/facilities"
+            element={
+              <Facilities
+                facilities={facilityList}
+                anomalies={alerts}
+              />
+            }
+          />
+
+          <Route
+            path="/facilities/:code"
+            element={
+              <Detail
+                facilities={facilityList}
+                anomalies={alerts}
+              />
+            }
+          />
+
+          <Route
+            path="/energy"
+            element={
+              <Resource
+                type="energy"
+                facilities={facilityList}
+              />
+            }
+          />
+
+          <Route
+            path="/water"
+            element={
+              <Resource
+                type="water"
+                facilities={facilityList}
+              />
+            }
+          />
+
+          <Route
+            path="/alerts"
+            element={
+              <Alerts
+                anomalies={alerts}
+              />
+            }
+          />
+
+          <Route
+            path="/analytics"
+            element={
+              <Analytics
+                facilities={facilityList}
+              />
+            }
+          />
+
+          <Route
+            path="/ai-insights"
+            element={<AIInsightsPage />}
+          />
+
+          <Route
+            path="/reports"
+            element={<Reports />}
+          />
+
+          <Route
+            path="/devices"
+            element={<Devices />}
+          />
+	  <Route
+  	    path="/maintenance"
+            element={<MaintenancePage />}
+          />
+          <Route
+            path="/settings"
+            element={<SettingsPage />}
+          />
+        </Route>
+      </Route>
+    </Routes>
+  );
+}
+
+export default App;
+
+
+
+
+
+
+
+
+
+
+
+
